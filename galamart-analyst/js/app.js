@@ -182,8 +182,15 @@ processBtn.addEventListener('click', async () => {
       if (excl.includes('не клизма')) return false;
       return true;
     });
-    let deadline = new Date(today.getFullYear(), today.getMonth(), 15);
-    if (today > deadline) deadline = new Date(today.getFullYear(), today.getMonth() + 1, 15);
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const klizmaDay = cfg.klizmaDay || 15;
+    const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+    const actualDay = Math.min(klizmaDay, daysInMonth);
+    let deadline = new Date(today.getFullYear(), today.getMonth(), actualDay);
+    if (today > deadline) {
+      const nextMonthDays = new Date(today.getFullYear(), today.getMonth() + 2, 0).getDate();
+      deadline = new Date(today.getFullYear(), today.getMonth() + 1, Math.min(klizmaDay, nextMonthDays));
+    }
     daysLeft = Math.max(0, Math.ceil((deadline - today) / 86400000));
     modeName = 'Клизма';
   } else {
