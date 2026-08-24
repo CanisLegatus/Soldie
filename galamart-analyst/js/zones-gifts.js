@@ -481,6 +481,8 @@ function openMegaModal(id) {
 }
 
 // ── Подарки ──
+let giftSelectedCodes = new Set();
+
 function giftRebuildOptions() {
   const uniq = (arr, key) => [...new Set(arr.map(r => String(r[key] ?? '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ru'));
   const fill = (sel, vals) => {
@@ -530,7 +532,9 @@ function renderGifts() {
     const code = String(r['код'] ?? '').trim();
     const cost = num(r['себ, руб.']);
     const mk = itemMarkup(r);
-    return `<tr>
+    const isSelected = giftSelectedCodes.has(code);
+    return `<tr data-code="${escapeHtml(code)}" class="${isSelected ? 'row-selected' : ''}">
+      <td><input type="checkbox" class="gift-check" data-gift-code="${escapeHtml(code)}"${isSelected ? ' checked' : ''}></td>
       <td><span class="link-cell" data-open-product data-code="${escapeHtml(code)}">${escapeHtml(code)}</span></td>
       <td style="white-space:normal">${escapeHtml(truncateStr(r['товар'], 56))}</td>
       <td>${escapeHtml(String(r['группа 1'] ?? '').trim() || '—')}</td>
@@ -549,14 +553,54 @@ function renderGifts() {
   }).join('');
 
   giftsContent.innerHTML = `
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+      <button type="button" id="giftSelectAllBtn" class="chip">✅ Выбрать все</button>
+      <button type="button" id="giftDeselectAllBtn" class="chip">❌ Снять выбор</button>
+      <button type="button" id="giftExportSelectedBtn" class="btn-export">⬇️ Экспорт выбранных</button>
+      <span class="hint">Выбрано: <b id="giftSelectedCount">${giftSelectedCodes.size}</b> из ${fmt(total)}</span>
+    </div>
     <div class="zone-scroll" style="max-height:62vh">
       <table class="mini-table sortable" style="margin-top:0">
-        <thead><tr><th>Код</th><th>Товар</th><th>Группа 1</th><th>Группа 2</th><th>Группа 3</th><th>КУБЫ</th><th>Себестоимость</th><th>Цена маг</th><th>Наценка</th><th>Склад</th><th>Продано</th><th>ТО</th><th>ВП</th><th>Ост. дней</th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="14">Ничего не найдено — поднимите лимит или выберите другую группу.</td></tr>'}</tbody>
+        <thead><tr><th>✓</th><th>Код</th><th>Товар</th><th>Группа 1</th><th>Группа 2</th><th>Группа 3</th><th>КУБЫ</th><th>Себестоимость</th><th>Цена маг</th><th>Наценка</th><th>Склад</th><th>Продано</th><th>ТО</th><th>ВП</th><th>Ост. дней</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="15">Ничего не найдено — поднимите лимит или выберите другую группу.</td></tr>'}</tbody>
       </table>
     </div>
     ${total > 500 ? `<div class="hint">Показаны первые 500 из ${total}.</div>` : ''}
   `;
+  
+  // Обновить счетчик
+  updateGiftSelectedCount();
+}
+
+function updateGiftSelectedCount() {
+  const el = document.getElementById('giftSelectedCount');
+  if (el) el.textContent = giftSelectedCodes.size;
+}
+
+function exportSelectedGifts() {
+  if (giftSelectedCodes.size === 0) { showStatus('⚠️ Выберите хотя бы один товар', 'error'); return; }
+  const rows = [['Код', 'Товар', 'Группа 1', 'Группа 2', 'Группа 3', 'Себестоимость', 'Цена маг', 'Склад']];
+  rawData.forEach(r => {
+    const code = String(r['код'] ?? '').trim();
+    if (giftSelectedCodes.has(code)) {
+      rows.push([
+        code,
+        r['товар'],
+        r['группа 1'],
+        r['группа 2'],
+        r['группа 3'],
+        num(r['себ, руб.']),
+        num(r['цена маг, руб.']),
+        num(r['склад кол'])
+      ]);
+    }
+  });
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Подарки');
+  const today = new Date().toLocaleDateString('ru-RU').replace(/\./g, '-');
+  XLSX.writeFile(wb, `galamart_gifts_selected_${today}.xlsx`);
+  showStatus(`✅ Экспортировано ${giftSelectedCodes.size} подарков`, 'success');
 }
 
 let giftTimer = null;
