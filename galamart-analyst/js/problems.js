@@ -159,6 +159,7 @@ function cfgPanelHtml() {
     <div class="cfg-item"><label>День поставки</label><select id="cfgDeliveryDay">${dayOpts(cfg.deliveryDay)}</select></div>
     <div class="cfg-item"><label>Страховой запас, дн.</label><input type="number" id="cfgSafetyDays" min="0" max="30" value="${cfg.safetyDays}"></div>
     <div class="cfg-item"><label>Порог затоваривания, дн.</label><input type="number" id="cfgOverDays" min="30" max="365" value="${cfg.overDays}"></div>
+    <div class="cfg-item"><label>День клизмы (дедлайн)</label><input type="number" id="cfgKlizmaDay" min="1" max="31" value="${cfg.klizmaDay}"></div>
     <div class="hint">Схема: заказ в ${WD[cfg.orderDay]} → поставка через ${log.lag} дн. (${WD[cfg.deliveryDay]}) → цикл 7 дн. Параметры сохраняются в браузере.</div>
   </div>`;
 }
@@ -202,12 +203,13 @@ function renderIssues() {
   const capNote = list.length > ISSUES_LIMIT ? `<div class="hint" style="margin-top:8px">Показаны первые ${ISSUES_LIMIT} из ${list.length}. Уточните фильтр типа.</div>` : '';
 
   issuesTitle.textContent = `🚨 Проблемы — ${counts.all} позиций требуют внимания`;
-  issuesContent.innerHTML = timeline + `<div class="chip-row">${chips}</div>` + cards + capNote;
+  issuesContent.innerHTML = `<div style="display:flex;gap:8px;margin-bottom:8px"><button type="button" class="btn-export" id="exportProblemsBtn">⬇️ Excel</button></div>` + timeline + `<div class="chip-row">${chips}</div>` + cards + capNote;
   issuesCard.classList.remove('hidden');
   showStatus(`✅ Проблем найдено: ${counts.all}.\n` + ISSUE_TYPES.map(t => `${t.icon} ${t.label}: ${counts[t.key] || 0}`).join(' · '), 'success');
 }
 
 issuesCard.addEventListener('click', e => {
+  if (e.target.closest('#exportProblemsBtn')) { exportProblemsToExcel(); return; }
   const chip = e.target.closest('[data-issue-filter]');
   if (chip) { issueFilter = chip.dataset.issueFilter; renderIssues(); return; }
   if (e.target.closest('#issueCfgToggle')) { issueCfgOpen = !issueCfgOpen; renderIssues(); return; }
@@ -223,4 +225,43 @@ issuesCard.addEventListener('change', e => {
   if (t.id === 'cfgDeliveryDay') { cfg.deliveryDay = +t.value; saveCfg(); renderIssues(); }
   if (t.id === 'cfgSafetyDays')  { cfg.safetyDays = Math.max(0, Math.min(30, +t.value || 0)); saveCfg(); renderIssues(); }
   if (t.id === 'cfgOverDays')    { cfg.overDays = Math.max(30, Math.min(365, +t.value || 90)); saveCfg(); renderIssues(); }
+  if (t.id === 'cfgKlizmaDay')   { cfg.klizmaDay = Math.max(1, Math.min(31, +t.value || 15)); saveCfg(); renderIssues(); }
 });
+
+// ── Экспорт проблем в Excel ──
+function exportProblemsToExcel() {
+  if (!rawData.length) return;
+  const log = getLogistics(cfg);
+  const all = buildProblems(log);
+  let list;
+  if (issueFilter === 'all') {
+    list = ISSUE_TYPES.flatMap(t => all.filter(p => p.type === t.key).sort(SORTS[t.key]));
+  } else {
+    list = all.filter(p => p.type === issueFilter).sort(SORTS[issueFilter]);
+  }
+  const shown = list.slice(0, ISSUES_LIMIT);
+  const rows = [['Тип проблемы', 'Код', 'Товар', 'Группа 1', 'КУБЫ', 'Склад, шт', 'Скорость, шт/дн', 'Хватит на, дн', 'ТО, руб', 'Рекомендуемый заказ, шт', 'Рекомендация (текст)']];
+  shown.forEach(p => {
+    const meta = ISSUE_TYPES.find(t => t.key === p.type);
+    const rec = problemRec(p, log);
+    const stock = p.type === 'oos' ? 0 : num(p.r['склад кол']);
+    const rate = p.rate || 0;
+    const daysLeftVal = p.daysLeft !== undefined ? (isFinite(p.daysLeft) ? p.daysLeft : '∞') : (p.type === 'oos' ? '0' : '—');
+    const orderQty = p.orderQty || (p.type === 'oos' ? Math.max(1, Math.ceil((p.rate || 1) * (log.arrivalIn + 7 + cfg.safetyDays))) : 0);
+    rows.push([
+      `${meta.icon} ${meta.label}`,
+      p.code,
+      String(p.r['товар'] ?? ''),
+      String(p.r['группа 1'] ?? '').trim(),
+      String(p.r['кубы'] ?? ''),
+      stock,
+      rate > 0 ? rate.toFixed(2) : '',
+      daysLeftVal,
+      p.toRub || 0,
+      orderQty,
+      rec.html.replace(/<[^>]+>/g, '')
+    ]);
+  });
+  const date = excelDateSuffix();
+  exportToExcel(`galamart_problems_${date}.xlsx`, 'Проблемы', rows);
+}

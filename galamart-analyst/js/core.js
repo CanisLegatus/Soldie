@@ -88,7 +88,7 @@ const METRIC_TAB_LABELS = { to: '💰 По ТО', qty: '📦 По штукам',
 
 // ── Логистика (настраиваемая) ──
 const WD = ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'];
-const DEFAULT_CFG = { orderDay: 5, deliveryDay: 4, safetyDays: 7, overDays: 90 };
+const DEFAULT_CFG = { orderDay: 5, deliveryDay: 4, safetyDays: 7, overDays: 90, klizmaDay: 15 };
 function loadCfg() {
   try { return Object.assign({}, DEFAULT_CFG, JSON.parse(localStorage.getItem('galamart_cfg') || '{}')); }
   catch (e) { return Object.assign({}, DEFAULT_CFG); }
@@ -361,3 +361,21 @@ fileInput.addEventListener('change', (e) => {
   };
   reader.readAsArrayBuffer(file);
 });
+// ── Экспорт в Excel (универсальный) ──
+function excelDateSuffix() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function exportToExcel(filename, sheetName, rows) {
+  if (typeof XLSX === 'undefined') { showStatus('❌ Библиотека XLSX не найдена.', 'error'); return; }
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  const maxCols = rows.reduce((max, r) => Math.max(max, r.length), 0);
+  ws['!cols'] = Array.from({ length: maxCols }, () => ({ wch: 18 }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, sheetName);
+  XLSX.writeFile(wb, filename);
+}
