@@ -201,6 +201,15 @@ function stockDaysLeft(r) {
   const rate = dailyRate(r);
   return rate > 0 ? { days: stock / rate, approx: true } : { days: Infinity };
 }
+function isUnsold21Days(r) {
+  // Товар считается "непродающимся", если не продается 21 день и больше
+  const imp = parseDate(r['дата ввоза']);
+  if (!imp) return false;
+  const sold = num(r['продано (шт)']);
+  if (sold > 0) return false;
+  const daysSinceImport = Math.floor((Date.now() - imp.getTime()) / 86400000);
+  return daysSinceImport >= 21;
+}
 function coverBadge(d) {
   if (!isFinite(d)) return '<span class="ratio-badge ratio-fire">∞</span>';
   if (d <= 14) return `<span class="ratio-badge ratio-fire">${fmtDays(d)} дн.</span>`;
@@ -244,7 +253,7 @@ function byGroupAgg(rows, key) {
   });
   return [...m.entries()].map(([g, arr]) => ({ g, a: aggRows(arr) }));
 }
-function isDeadRow(r) { return num(r['склад кол']) > 0 && num(r['продано (шт)']) === 0 && dailyRate(r) === 0; }
+function isDeadRow(r) { return isUnsold21Days(r); }
 function itemFrozen(r) { return num(r['склад сумма, руб.']) || num(r['склад кол']) * num(r['себ, руб.']); }
 function itemAgeDays(r) { const imp = parseDate(r['дата ввоза']); return imp ? Math.floor((Date.now() - imp.getTime()) / 86400000) : null; }
 function itemMarkup(r) { const c = num(r['себ, руб.']); if (c <= 0) return null; return (num(r['цена маг, руб.']) - c) / c * 100; }

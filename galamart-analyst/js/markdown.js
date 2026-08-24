@@ -33,6 +33,16 @@ function getPriceReason(currentPrice, stockDays, daysLeft) {
   return { text: `🔥 Горит ×${ratio.toFixed(1)} → -${pct}%`, cls: 'reason-hard' };
 }
 
+// Проверка на "непродающийся" товар (21+ дней без продаж)
+function getUnsoldReason(row) {
+  if (isUnsold21Days(row)) {
+    const imp = parseDate(row['дата ввоза']);
+    const days = Math.floor((Date.now() - imp.getTime()) / 86400000);
+    return { text: `🧊 Не продается ${days} дн. (≥21)`, cls: 'reason-unsold' };
+  }
+  return null;
+}
+
 function ratioBadge(stockDays, daysLeft) {
   if (daysLeft <= 0)     return `<span class="ratio-badge ratio-fire">💀 0 дн.</span>`;
   if (stockDays >= 9999) return `<span class="ratio-badge ratio-fire">∞</span>`;
@@ -100,7 +110,7 @@ function renderTable(data, mode, daysLeft) {
       `;
     } else {
       const suggested  = suggestPrice(curPrice, stockDays, daysLeft);
-      const reason     = getPriceReason(curPrice, stockDays, daysLeft);
+      const reason     = getUnsoldReason(row) || getPriceReason(curPrice, stockDays, daysLeft);
       const priceClass = suggested < curPrice ? 'suggested-fire' : 'suggested';
       const vpStock    = (curPrice - cost) * stockQty;
       tr.innerHTML = `
@@ -213,7 +223,7 @@ window.calcMargin = function(input) {
 };
 
 // ── Экспорт уценки ──
-exportBtn.addEventListener('click', () => {
+document.getElementById('exportBtn')?.addEventListener('click', () => {
   const rows = [['Код', 'Цена']];
   document.querySelectorAll('#tableBody tr').forEach(tr => {
     const code  = tr.dataset.code || '';
@@ -226,4 +236,32 @@ exportBtn.addEventListener('click', () => {
   XLSX.utils.book_append_sheet(wb, ws, 'Уценка');
   const today = new Date().toLocaleDateString('ru-RU').replace(/\./g, '-');
   XLSX.writeFile(wb, `galamart_ucenka_${today}.xlsx`);
+});
+
+// ── Универсальный экспорт таблиц в Excel ──
+document.addEventListener('click', e => {
+  const btn = e.target.closest('[data-table-export]');
+  if (!btn) return;
+  const containerId = btn.dataset.tableExport;
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  
+  const table = container.querySelector('table.mini-table, table.sortable');
+  if (!table) { showStatus('⚠️ Нет таблицы для экспорта', 'error'); return; }
+  
+  const rows = [];
+  table.querySelectorAll('thead tr').forEach(tr => {
+    const row = [...tr.querySelectorAll('th,td')].map(td => td.textContent.trim());
+    rows.push(row);
+  });
+  table.querySelectorAll('tbody tr').forEach(tr => {
+    const row = [...tr.querySelectorAll('th,td')].map(td => td.textContent.trim());
+    rows.push(row);
+  });
+  
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Экспорт');
+  const today = new Date().toLocaleDateString('ru-RU').replace(/\./g, '-');
+  XLSX.writeFile(wb, `galamart_export_${containerId}_${today}.xlsx`);
 });

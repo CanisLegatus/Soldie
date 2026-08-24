@@ -74,8 +74,9 @@
     .cube-check:hover { border-color: var(--primary); }
     .cube-check:has(input:checked) { background: #eff6ff; border-color: var(--primary); color: var(--primary-hover); font-weight: 600; }
 
-    .result-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; flex-wrap: wrap; gap: 10px; }
-    .result-header h2 { margin: 0; font-size: 1rem; font-weight: 600; color: var(--text-muted); }
+    .result-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; flex-wrap: wrap; gap: 8px; }
+    .result-header h2 { margin: 0; font-size: 0.95rem; font-weight: 600; color: var(--text-muted); }
+    .result-header .btn-export, .result-header button { height: fit-content; font-size: 0.8rem; padding: 8px 14px; }
 
     .table-wrapper { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); max-height: 75vh; }
     table { width: 100%; border-collapse: collapse; font-size: 0.8rem; white-space: nowrap; }
@@ -155,18 +156,18 @@
     .icon-btn { background: transparent; color: var(--primary); padding: 2px 7px; font-size: 0.9rem; }
     .icon-btn:hover:not(:disabled) { background: #eff6ff; transform: none; }
 
-    .dash-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(185px, 1fr)); gap: 12px; }
-    .dash-kpi { background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 14px; cursor: pointer; transition: 0.2s; position: relative; }
+    .dash-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)); gap: 10px; }
+    .dash-kpi { background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 12px; cursor: pointer; transition: 0.2s; position: relative; }
     .dash-kpi:hover { border-color: var(--primary); box-shadow: var(--shadow); transform: translateY(-2px); }
-    .dash-kpi .dk-icon { position: absolute; top: 12px; right: 12px; font-size: 1.15rem; }
-    .dash-kpi .dk-label { font-size: 0.73rem; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
-    .dash-kpi .dk-value { font-size: 1.35rem; font-weight: 800; margin: 5px 0 3px; }
-    .dash-kpi .dk-sub { font-size: 0.73rem; color: var(--text-muted); }
-    .dash-kpi .dk-open { font-size: 0.68rem; color: var(--primary); margin-top: 7px; font-weight: 600; }
+    .dash-kpi .dk-icon { position: absolute; top: 10px; right: 10px; font-size: 1rem; }
+    .dash-kpi .dk-label { font-size: 0.68rem; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
+    .dash-kpi .dk-value { font-size: 1.15rem; font-weight: 800; margin: 4px 0 2px; }
+    .dash-kpi .dk-sub { font-size: 0.68rem; color: var(--text-muted); }
+    .dash-kpi .dk-open { font-size: 0.64rem; color: var(--primary); margin-top: 6px; font-weight: 600; }
     .dash-kpi.dk-alert { background: #fef2f2; border-color: #fecaca; }
     .dash-kpi.dk-good { background: #f0fdf4; border-color: #bbf7d0; }
 
-    .dash-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; margin-top: 14px; }
+    .dash-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin-top: 12px; }
     .dash-card { background: #f8fafc; border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
     .dash-card h4 { margin: 0 0 10px; font-size: 0.85rem; color: #334155; }
     .dash-chart { position: relative; height: 240px; }
@@ -280,14 +281,14 @@
   <h1>📉 Менеджер уценки Галамарт</h1>
 
   <div class="card">
-    <div class="controls">
-      <div class="control-group">
+    <div class="controls" style="align-items: flex-start;">
+      <div class="control-group" style="min-width: 280px;">
         <label>1. Загрузите отчёт</label>
         <input type="file" id="fileInput" accept=".xlsx,.xls,.csv">
       </div>
-      <div class="control-group" style="min-width: 560px; flex: 1;">
+      <div class="control-group" style="flex: 1; min-width: 480px;">
         <label>Разделы</label>
-        <div class="mode-bar">
+        <div class="mode-bar" style="gap: 18px;">
           <div class="mode-cluster">
             <span class="cluster-label">Аналитика</span>
             <div class="segmented">
@@ -314,11 +315,11 @@
           </div>
         </div>
       </div>
-      <div class="control-group hidden" id="dateGroup">
+      <div class="control-group hidden" id="dateGroup" style="min-width: 200px;">
         <label id="dateLabel">2. Дата ввоза (до)</label>
         <input type="date" id="filterDate">
       </div>
-      <button id="processBtn" disabled>Обработать</button>
+      <button id="processBtn" disabled style="align-self: flex-end;">Обработать</button>
     </div>
 
     <div id="browsePanel" class="hidden">
@@ -363,10 +364,10 @@
   <div id="result" class="card hidden">
     <div class="result-header">
       <h2 id="resultTitle">Результаты</h2>
-      <button class="btn-export" id="exportBtn">⬇️ Выгрузить в Excel</button>
+      <button class="btn-export" data-table-export="mdTableContainer">⬇️ Выгрузить в Excel</button>
     </div>
     <div id="mdTotals" class="md-totals hidden"></div>
-    <div class="table-wrapper">
+    <div id="mdTableContainer" class="table-wrapper">
       <table id="dataTable" class="sortable">
         <thead></thead>
         <tbody id="tableBody"></tbody>
@@ -375,12 +376,18 @@
   </div>
 
   <div id="topCard" class="card hidden">
-    <div class="result-header"><h2 id="topTitle">🏆 ТОП-100</h2></div>
+    <div class="result-header">
+      <h2 id="topTitle">🏆 ТОП-100</h2>
+      <button class="btn-export" data-table-export="topContent">⬇️ Выгрузить в Excel</button>
+    </div>
     <div id="topContent"></div>
   </div>
 
   <div id="issuesCard" class="card hidden">
-    <div class="result-header"><h2 id="issuesTitle">🚨 Проблемы</h2></div>
+    <div class="result-header">
+      <h2 id="issuesTitle">🚨 Проблемы</h2>
+      <button class="btn-export" data-table-export="issuesContent">⬇️ Выгрузить в Excel</button>
+    </div>
     <div id="issuesContent"></div>
   </div>
 
@@ -398,7 +405,10 @@
   </div>
 
   <div id="giftsCard" class="card hidden">
-    <div class="result-header"><h2 id="giftsTitle">🎁 Выбор подарка</h2></div>
+    <div class="result-header">
+      <h2 id="giftsTitle">🎁 Выбор подарка</h2>
+      <button class="btn-export" data-table-export="giftsContent">⬇️ Выгрузить в Excel</button>
+    </div>
     <div class="filters-row" style="margin-top:0;padding-top:0;border-top:none">
       <div class="control-group" style="min-width:150px">
         <label>Лимит по себестоимости, ₽</label>
