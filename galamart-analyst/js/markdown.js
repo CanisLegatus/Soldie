@@ -246,6 +246,23 @@ document.addEventListener('click', e => {
   const container = document.getElementById(containerId);
   if (!container) return;
   
+  // Специальная обработка для таблицы уценки (Клизма/Продать до)
+  if (containerId === 'mdTableContainer') {
+    const rows = [['Код', 'Цена']];
+    container.querySelectorAll('tbody tr').forEach(tr => {
+      const code  = tr.dataset.code || '';
+      const price = parseFloat(tr.querySelector('.price-input')?.value) || 0;
+      rows.push([code, price]);
+    });
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [{ wch: 20 }, { wch: 12 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Уценка');
+    const today = new Date().toLocaleDateString('ru-RU').replace(/\./g, '-');
+    XLSX.writeFile(wb, `galamart_ucenka_${today}.xlsx`);
+    return;
+  }
+  
   const table = container.querySelector('table.mini-table, table.sortable');
   if (!table) { showStatus('⚠️ Нет таблицы для экспорта', 'error'); return; }
   
