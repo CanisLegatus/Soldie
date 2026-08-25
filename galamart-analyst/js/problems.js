@@ -239,9 +239,9 @@ function exportProblemsToExcel() {
   } else {
     list = all.filter(p => p.type === issueFilter).sort(SORTS[issueFilter]);
   }
-  const shown = list.slice(0, ISSUES_LIMIT);
+  // Экспортируем ВСЕ проблемы, а не только первые ISSUES_LIMIT
   const rows = [['Тип проблемы', 'Код', 'Товар', 'Группа 1', 'КУБЫ', 'Склад, шт', 'Скорость, шт/дн', 'Хватит на, дн', 'ТО, руб', 'Рекомендуемый заказ, шт', 'Рекомендация (текст)']];
-  shown.forEach(p => {
+  list.forEach(p => {
     const meta = ISSUE_TYPES.find(t => t.key === p.type);
     const rec = problemRec(p, log);
     const stock = p.type === 'oos' ? 0 : num(p.r['склад кол']);
