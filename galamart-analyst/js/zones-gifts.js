@@ -607,6 +607,40 @@ let giftTimer = null;
 giftLimit.addEventListener('input', () => { clearTimeout(giftTimer); giftTimer = setTimeout(() => { if (rawData.length) renderGifts(); }, 200); });
 [giftSel1, giftSel2, giftSel3].forEach(s => s.addEventListener('change', () => { if (rawData.length) renderGifts(); }));
 giftInStock.addEventListener('change', () => { if (rawData.length) renderGifts(); });
+
+// Обработчики для кнопок выбора подарков
+document.addEventListener('click', e => {
+  if (e.target.closest('#giftSelectAllBtn')) {
+    const visibleCodes = new Set();
+    giftsContent.querySelectorAll('.gift-check').forEach(cb => visibleCodes.add(cb.dataset.giftCode));
+    visibleCodes.forEach(code => giftSelectedCodes.add(code));
+    renderGifts();
+    showStatus(`✅ Выбрано ${giftSelectedCodes.size} подарков`, 'success');
+    return;
+  }
+  if (e.target.closest('#giftDeselectAllBtn')) {
+    giftSelectedCodes.clear();
+    renderGifts();
+    showStatus('❌ Выбор снят', 'success');
+    return;
+  }
+  if (e.target.closest('#giftExportSelectedBtn')) {
+    exportSelectedGifts();
+    return;
+  }
+});
+
+// Обработчик чекбоксов подарков
+giftsContent.addEventListener('change', e => {
+  const cb = e.target.closest('.gift-check');
+  if (!cb) return;
+  const code = cb.dataset.giftCode;
+  if (cb.checked) giftSelectedCodes.add(code);
+  else giftSelectedCodes.delete(code);
+  updateGiftSelectedCount();
+  cb.closest('tr')?.classList.toggle('row-selected', cb.checked);
+});
+
 giftsContent.addEventListener('click', e => {
   const p = e.target.closest('[data-open-product]');
   if (p) openProduct(p.dataset.code, null);
