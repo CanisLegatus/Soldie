@@ -26,3 +26,9 @@ node_modules/
 .vscode/
 .idea/
 ```
+
+# Android Studio / Gradle
+.gradle/
+android/app/build/
+*.iml
+.local.properties
