@@ -68,6 +68,17 @@ function openProduct(code, backPath) {
   if (stock > 0) buildProductChart(r);
 }
 
+function openCube(rawCube) {
+  const cube = String(rawCube || '').trim();
+  const items = rawData.filter(r => String(r['кубы'] || '').trim() === cube);
+  if (!items.length) return;
+  const A = aggRows(items);
+  const byGroup = byGroupAgg(items, 'группа 1').sort((a, b) => b.a.to - a.a.to);
+  const rows = byGroup.map(e => `<tr><td><span class="link-cell" data-open-group data-g1="${escapeHtml(e.g)}">${escapeHtml(e.g)}</span></td><td>${fmt(e.a.sku)}</td><td>${fmt(e.a.to)} ₽</td><td>${fmt(e.a.gp)} ₽</td><td>${fmt(e.a.stockSum)} ₽</td><td>${coverBadge(e.a.turnover)}</td></tr>`).join('');
+  modalBox.innerHTML = `<div class="modal-head"><div><div class="breadcrumb">🏷 Карточка КУБА</div><h3>${cubeBadge(cube)}</h3></div><button class="modal-close" type="button" data-modal-close>✕ Закрыть</button></div><div class="kpi-grid">${tileHtml('SKU',fmt(A.sku))}${tileHtml('ТО',fmt(A.to)+' ₽','kpi-accent')}${tileHtml('Валовая прибыль',fmt(A.gp)+' ₽','',`маржа ${A.margin.toFixed(1)}%`) }${tileHtml('Склад',fmt(A.stockSum)+' ₽','',`${fmt(A.stock)} шт`) }${tileHtml('Оборачиваемость',fmtDays(A.turnover)+' дн.','',`${A.rate.toFixed(1)} шт/дн`)}</div><div class="zone-scroll"><table class="mini-table sortable"><thead><tr><th>Группа 1</th><th>SKU</th><th>ТО</th><th>ВП</th><th>Склад</th><th>Оборач.</th></tr></thead><tbody>${rows}</tbody></table></div><div class="hint">Клик по группе открывает её карточку. КУБ агрегирован по всем товарам с этим значением.</div>`;
+  modalOverlay.classList.remove('hidden');
+}
+
 function buildProductChart(r) {
   if (typeof Chart === 'undefined') return;
   const ctx = document.getElementById('modalCanvas');

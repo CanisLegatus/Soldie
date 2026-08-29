@@ -103,8 +103,17 @@ modalBox.addEventListener('click', e => {
   if (tab) { currentGroupTab = tab.dataset.tab; return renderGroupCard(); }
   const p = e.target.closest('[data-open-product]');
   if (p) return openProduct(p.dataset.code, currentGroupPath);
+  const cube = e.target.closest('[data-open-cube]');
+  if (cube) return openCube(cube.dataset.openCube);
   const g = e.target.closest('[data-open-group]');
   if (g) return openGroup(g.dataset.g1 || '', g.dataset.g2 || '', g.dataset.g3 || '');
+});
+
+// КУБЫ встречаются во всех разделах; единый обработчик делает их карточки доступными везде.
+document.addEventListener('click', e => {
+  const cube = e.target.closest('[data-open-cube]');
+  if (cube && !modalOverlay.classList.contains('hidden')) return;
+  if (cube) openCube(cube.dataset.openCube);
 });
 
 modalBox.addEventListener('change', e => {
@@ -136,6 +145,7 @@ segBtns.forEach(btn => {
       if (currentMode === 'browse' && browseData) { rebuildGroupOptions(); applyBrowse(); }
       if (currentMode === 'top100') renderTop100();
       if (currentMode === 'issues') renderIssues();
+      if (currentMode === 'verify') renderVerify();
       if (currentMode === 'dash') renderDashboard();
       if (currentMode === 'analysis') renderAnalysis();
       if (currentMode === 'gifts') renderGifts();

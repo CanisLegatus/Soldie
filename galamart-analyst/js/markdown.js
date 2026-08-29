@@ -33,12 +33,12 @@ function getPriceReason(currentPrice, stockDays, daysLeft) {
   return { text: `🔥 Горит ×${ratio.toFixed(1)} → -${pct}%`, cls: 'reason-hard' };
 }
 
-// Проверка на "непродающийся" товар (21+ дней без продаж)
+// Проверка на "непродающийся" товар по единому правилу (28+ дней без продаж)
 function getUnsoldReason(row) {
-  if (isUnsold21Days(row)) {
+  if (isUnsoldDays(row)) {
     const imp = parseDate(row['дата ввоза']);
     const days = Math.floor((Date.now() - imp.getTime()) / 86400000);
-    return { text: `🧊 Не продается ${days} дн. (≥21)`, cls: 'reason-unsold' };
+    return { text: `🧊 Не продается ${days} дн. (≥${NO_SALES_DAYS})`, cls: 'reason-unsold' };
   }
   return null;
 }

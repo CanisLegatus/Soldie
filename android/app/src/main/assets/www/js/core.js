@@ -37,6 +37,10 @@ const topContent      = document.getElementById('topContent');
 const issuesCard      = document.getElementById('issuesCard');
 const issuesTitle     = document.getElementById('issuesTitle');
 const issuesContent   = document.getElementById('issuesContent');
+const verifyCard      = document.getElementById('verifyCard');
+const verifyCodeInput = document.getElementById('verifyCodeInput');
+const verifyCodeBtn   = document.getElementById('verifyCodeBtn');
+const verifyContent   = document.getElementById('verifyContent');
 const zonesCard       = document.getElementById('zonesCard');
 const zonesTitle      = document.getElementById('zonesTitle');
 const zonesContent    = document.getElementById('zonesContent');
@@ -65,6 +69,8 @@ let currentGroupTab = 'to';
 let topMetric = 'to';
 let topCodesValue = '';
 let issueFilter = 'all';
+let issuePath = [];
+let issueTab = 'groups';
 let issueCfgOpen = false;
 let modalChart = null;
 let dashCharts = [];
@@ -179,7 +185,7 @@ function cubeBadge(raw) {
   if (!v) return '—';
   const k = cubeKind(v);
   const cls = k === 'ВНЕ_АМ' ? 'cube-vneam' : k === 'ЗО' ? 'cube-zo' : k === 'ЗО сеть' ? 'cube-zoset' : 'cube-other';
-  return `<span class="cube-badge ${cls}">${escapeHtml(v)}</span>`;
+  return `<button type="button" class="cube-badge ${cls}" data-open-cube="${escapeHtml(v)}" title="Открыть карточку КУБА">${escapeHtml(v)}</button>`;
 }
 
 // ── Продажи и сток ──
@@ -201,14 +207,15 @@ function stockDaysLeft(r) {
   const rate = dailyRate(r);
   return rate > 0 ? { days: stock / rate, approx: true } : { days: Infinity };
 }
-function isUnsold21Days(r) {
-  // Товар считается "непродающимся", если не продается 21 день и больше
+const NO_SALES_DAYS = 28;
+function isUnsoldDays(r) {
+  // Единое правило для дашборда, анализа, уценки и раздела «Проблемы».
   const imp = parseDate(r['дата ввоза']);
   if (!imp) return false;
   const sold = num(r['продано (шт)']);
   if (sold > 0) return false;
   const daysSinceImport = Math.floor((Date.now() - imp.getTime()) / 86400000);
-  return daysSinceImport >= 21;
+  return num(r['склад кол']) > 0 && daysSinceImport >= NO_SALES_DAYS;
 }
 function coverBadge(d) {
   if (!isFinite(d)) return '<span class="ratio-badge ratio-fire">∞</span>';
@@ -234,9 +241,8 @@ function aggRows(rows) {
     a.stockSum += sSum;
     a.sold += num(r['продано (шт)']);
     a.to += num(r['то, руб']); a.toss += num(r['то сс, руб']);
-    const rate = dailyRate(r);
-    a.rate += rate;
-    if (st > 0 && num(r['продано (шт)']) === 0 && rate === 0) { a.deadCount++; a.deadSum += sSum; }
+    a.rate += dailyRate(r);
+    if (isUnsoldDays(r)) { a.deadCount++; a.deadSum += sSum; }
   });
   a.gp = a.to - a.toss;
   a.margin = a.to > 0 ? a.gp / a.to * 100 : 0;
@@ -253,7 +259,7 @@ function byGroupAgg(rows, key) {
   });
   return [...m.entries()].map(([g, arr]) => ({ g, a: aggRows(arr) }));
 }
-function isDeadRow(r) { return isUnsold21Days(r); }
+function isDeadRow(r) { return isUnsoldDays(r); }
 function itemFrozen(r) { return num(r['склад сумма, руб.']) || num(r['склад кол']) * num(r['себ, руб.']); }
 function itemAgeDays(r) { const imp = parseDate(r['дата ввоза']); return imp ? Math.floor((Date.now() - imp.getTime()) / 86400000) : null; }
 function itemMarkup(r) { const c = num(r['себ, руб.']); if (c <= 0) return null; return (num(r['цена маг, руб.']) - c) / c * 100; }
@@ -270,6 +276,7 @@ function hideAllPages() {
   analysisCard.classList.add('hidden');
   topCard.classList.add('hidden');
   issuesCard.classList.add('hidden');
+  verifyCard.classList.add('hidden');
   zonesCard.classList.add('hidden');
   giftsCard.classList.add('hidden');
 }
