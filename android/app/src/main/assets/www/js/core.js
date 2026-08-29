@@ -37,6 +37,10 @@ const topContent      = document.getElementById('topContent');
 const issuesCard      = document.getElementById('issuesCard');
 const issuesTitle     = document.getElementById('issuesTitle');
 const issuesContent   = document.getElementById('issuesContent');
+const verifyCard      = document.getElementById('verifyCard');
+const verifyCodeInput = document.getElementById('verifyCodeInput');
+const verifyCodeBtn   = document.getElementById('verifyCodeBtn');
+const verifyContent   = document.getElementById('verifyContent');
 const zonesCard       = document.getElementById('zonesCard');
 const zonesTitle      = document.getElementById('zonesTitle');
 const zonesContent    = document.getElementById('zonesContent');
@@ -180,7 +184,7 @@ function cubeBadge(raw) {
   if (!v) return '—';
   const k = cubeKind(v);
   const cls = k === 'ВНЕ_АМ' ? 'cube-vneam' : k === 'ЗО' ? 'cube-zo' : k === 'ЗО сеть' ? 'cube-zoset' : 'cube-other';
-  return `<span class="cube-badge ${cls}">${escapeHtml(v)}</span>`;
+  return `<button type="button" class="cube-badge ${cls}" data-open-cube="${escapeHtml(v)}" title="Открыть карточку КУБА">${escapeHtml(v)}</button>`;
 }
 
 // ── Продажи и сток ──
@@ -271,6 +275,7 @@ function hideAllPages() {
   analysisCard.classList.add('hidden');
   topCard.classList.add('hidden');
   issuesCard.classList.add('hidden');
+  verifyCard.classList.add('hidden');
   zonesCard.classList.add('hidden');
   giftsCard.classList.add('hidden');
 }

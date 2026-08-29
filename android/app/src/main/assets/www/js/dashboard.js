@@ -57,7 +57,7 @@ function renderDashboard() {
     { key: 'problems', icon: '🚨', label: 'Проблемы', value: fmt(problems.length), sub: ISSUE_TYPES.map(t => `${t.icon}${problems.filter(p => p.type === t.key).length}`).join('  '), cls: problems.length ? 'dk-alert' : 'dk-good', action: 'issues' }
   ];
 
-  const tease = [...problems].sort((a, b) => (b.lvl - a.lvl) || ((b.toRub || 0) - (a.toRub || 0))).slice(0, 5);
+  const tease = [...problems].sort((a, b) => issuePriority(b) - issuePriority(a)).slice(0, 5);
   const teaseHtml = tease.length
     ? tease.map(p => {
         const meta = ISSUE_TYPES.find(t => t.key === p.type);
@@ -135,7 +135,7 @@ function renderDashboard() {
     type: 'bar',
     data: {
       labels: ISSUE_TYPES.map(t => `${t.icon} ${t.label}`),
-      datasets: [{ data: ISSUE_TYPES.map(t => problems.filter(p => p.type === t.key).length), backgroundColor: ['#ef4444', '#f97316', '#64748b', '#f59e0b', '#8b5cf6'], borderRadius: 4 }]
+      datasets: [{ data: ISSUE_TYPES.map(t => problems.filter(p => p.type === t.key).length), backgroundColor: ['#ef4444', '#a855f7', '#64748b', '#f59e0b', '#8b5cf6', '#0ea5e9'], borderRadius: 4 }]
     },
     options: {
       indexAxis: 'y', responsive: true, maintainAspectRatio: false,

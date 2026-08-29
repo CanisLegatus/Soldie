@@ -381,6 +381,7 @@
             <span class="cluster-label">Инструменты</span>
             <div class="segmented">
               <button type="button" class="seg-btn" data-mode="browse">👁 Просмотр</button>
+              <button type="button" class="seg-btn" data-mode="verify">📍 Проверка на месте</button>
               <button type="button" class="seg-btn" data-mode="zones">🧱 Зоны</button>
               <button type="button" class="seg-btn" data-mode="gifts">🎁 Подарки</button>
             </div>
@@ -466,6 +467,12 @@
     <div id="issuesContent"></div>
   </div>
 
+  <div id="verifyCard" class="card hidden">
+    <div class="result-header"><h2>📍 Проверка на месте</h2></div>
+    <div class="an-codes-bar"><input id="verifyCodeInput" type="text" inputmode="numeric" placeholder="Введите или отсканируйте артикул"><button id="verifyCodeBtn" type="button">Проверить</button></div>
+    <div id="verifyContent"></div>
+  </div>
+
   <div id="zonesCard" class="card hidden">
     <div class="result-header">
       <h2 id="zonesTitle">🧱 Коммерческие зоны</h2>
@@ -523,6 +530,7 @@
 <script defer src="js/problems.js"></script>
 <script defer src="js/dashboard.js"></script>
 <script defer src="js/analysis.js"></script>
+<script defer src="js/verify.js"></script>
 <script defer src="js/top100.js"></script>
 <script defer src="js/cards.js"></script>
 <script defer src="js/zones-gifts.js"></script>
