@@ -94,48 +94,33 @@ function issueSummary(all) {
   const nosales = uniqueIssueSkus(all.filter(p => p.type === 'nosales')).length;
   return `<div class="issues-hero"><div class="issues-score"><div class="muted">${escapeHtml(issueStoreName())} · центр управления исключениями</div><div class="big">${fmt(sku.length)} SKU требуют решения</div><div class="muted">${fmt(all.length)} сигналов. Один товар может иметь несколько реальных проблем — они не скрываются.</div></div><div class="issue-kpis"><div class="issue-kpi"><span>Риск валовой прибыли</span><b>${fmt(lost)} ₽</b></div><div class="issue-kpi"><span>Капитал в проблемном запасе</span><b>${fmt(frozen)} ₽</b></div><div class="issue-kpi"><span>Критичный недосток</span><b>${fmt(oos)} SKU</b></div><div class="issue-kpi"><span>Непродажи 28+</span><b>${fmt(nosales)} SKU</b></div></div></div>`;
 }
-function issueCrumbsHtml() {
-  const crumbs = [`<span class="crumb ${issuePath.length === 0 ? 'current' : ''}" data-issue-root>⌂ Магазины</span>`];
-  issuePath.forEach((p, i) => { crumbs.push('<span class="text-muted">›</span>', `<span class="crumb ${i === issuePath.length - 1 ? 'current' : ''}" data-issue-crumb="${i}">${escapeHtml(issuePathLabel(i,p))}</span>`); });
-  return `<div class="crumb-row">${crumbs.join('')}</div>`;
-}
-function issueTabsHtml(depth, events) {
-  return `<div class="tabs">${depth < 4 ? `<button type="button" class="tab-btn ${issueTab === 'groups' ? 'active' : ''}" data-issue-tab="groups">📁 Подгруппы</button>` : ''}<button type="button" class="tab-btn ${issueTab === 'items' ? 'active' : ''}" data-issue-tab="items">📦 Товары (${uniqueIssueSkus(events).length})</button></div>`;
-}
-function issueGroupsTable(events, depth) {
-  const groups = new Map();
-  events.forEach(p => { const key=issuePathKey(p, depth); if (!groups.has(key)) groups.set(key, []); groups.get(key).push(p); });
-  const rows = [...groups.entries()].map(([key, ps]) => {
-    const sku=uniqueIssueSkus(ps), A=aggRows(sku.map(p=>p.r)), lost=ps.filter(p=>p.type==='shortage').reduce((n,p)=>n+p.impact,0), types=[...new Set(ps.map(p=>ISSUE_TYPES.find(t=>t.key===p.type).icon))].join(' ');
-    return { key, A, sku:sku.length, lost, types };
-  }).sort((a,b)=>b.lost-a.lost || b.A.stockSum-a.A.stockSum).map(e => `<tr><td><span class="link-cell" data-issue-drill="${escapeHtml(e.key)}"><b>${escapeHtml(issuePathLabel(depth,e.key))}</b></span></td><td>${e.types}</td><td>${fmt(e.sku)}</td><td>${fmt(e.A.to)} ₽</td><td>${fmt(e.A.gp)} ₽</td><td>${e.A.margin.toFixed(1)}%</td><td>${fmt(e.A.stockSum)} ₽</td><td>${coverBadge(e.A.turnover)}</td><td>${fmt(e.lost)} ₽</td></tr>`).join('');
-  return `<div class="zone-scroll" style="max-height:56vh"><table class="mini-table sortable"><thead><tr><th>${depth === 0 ? 'Магазин' : `Группа ${depth}`}</th><th>Сигналы</th><th>SKU</th><th>ТО</th><th>ВП</th><th>Маржа</th><th>Склад</th><th>Оборач.</th><th>Риск ВП</th></tr></thead><tbody>${rows || '<tr><td colspan="9">Проблем нет</td></tr>'}</tbody></table></div>`;
-}
-function issueItemsTable(events) {
-  const rows=[...events].sort((a,b)=>issuePriority(b)-issuePriority(a)).slice(0,500).map(p => { const t=ISSUE_TYPES.find(x=>x.key===p.type); return `<tr><td>${t.icon} ${t.label}</td><td><span class="link-cell" data-open-product data-code="${escapeHtml(p.code)}">${escapeHtml(p.code)}</span></td><td style="white-space:normal">${escapeHtml(truncateStr(p.r['товар'],52))}</td><td>${cubeBadge(p.r['кубы'])}</td><td>${fmt(p.stock)}</td><td>${fmt(p.to)} ₽</td><td>${p.margin === null ? '—' : p.margin.toFixed(1)+'%'}</td><td>${isFinite(p.days)?fmtDays(p.days)+' дн.':'∞'}</td><td>${fmt(p.frozen)} ₽</td><td>${fmt(p.impact || 0)} ₽</td></tr>`; }).join('');
-  return `<div class="zone-scroll" style="max-height:56vh"><table class="mini-table sortable"><thead><tr><th>Проблема</th><th>Код</th><th>Товар</th><th>КУБ</th><th>Склад</th><th>ТО</th><th>Маржа</th><th>Запас</th><th>Заморожено</th><th>Риск ВП</th></tr></thead><tbody>${rows || '<tr><td colspan="10">Проблем нет</td></tr>'}</tbody></table></div>`;
+function issueTree(list, log) {
+  const current = list.filter(p => issuePath.every((x, i) => issuePathKey(p, i) === x));
+  if (issuePath.length >= 4) {
+    const sorted = current.sort(issueFilter === 'all' ? (a,b) => issuePriority(b) - issuePriority(a) : SORTS[issueFilter]);
+    return sorted.slice(0, ISSUES_LIMIT).map(p => problemCard(p,log)).join('') || '<div class="issue-empty">В этом разделе проблем нет.</div>';
+  }
+  const depth = issuePath.length, groups = new Map();
+  current.forEach(p => { const key = issuePathKey(p, depth); if (!groups.has(key)) groups.set(key, []); groups.get(key).push(p); });
+  return `<div class="issue-tree">${[...groups.entries()].sort((a,b) => issuePriority(b[1][0]) - issuePriority(a[1][0]) || b[1].length - a[1].length).map(([key, ps]) => { const sku=uniqueIssueSkus(ps), frozen=uniqueIssueSkus(ps.filter(p=>['over','slow','nosales'].includes(p.type))).reduce((s,p)=>s+p.frozen,0), lost=ps.filter(p=>p.type==='shortage').reduce((s,p)=>s+p.impact,0); return `<button type="button" class="issue-node" data-issue-drill="${escapeHtml(key)}"><span>›</span><span class="node-name">${escapeHtml(issuePathLabel(depth,key))}</span><span class="node-stats">${lost ? `риск ${fmt(lost)} ₽` : `запас ${fmt(frozen)} ₽`}</span><span class="node-count">${sku.length} SKU</span></button>`; }).join('')}</div>`;
 }
 function renderIssues() {
   if (!rawData.length) { showStatus('❌ Сначала загрузите файл.', 'error'); return; }
   const log=getLogistics(cfg), all=buildProblems(log), counts=Object.fromEntries(ISSUE_TYPES.map(t=>[t.key,all.filter(p=>p.type===t.key).length]));
   const list=issueFilter==='all' ? all : all.filter(p=>p.type===issueFilter);
-  const current=list.filter(p=>issuePath.every((x,i)=>issuePathKey(p,i)===x));
-  if (issuePath.length >= 4) issueTab='items';
-  const chips=[`<button type="button" class="chip ${issueFilter==='all'?'active':''}" data-issue-filter="all">Все сигналы (${all.length})</button>`].concat(ISSUE_TYPES.map(t=>`<button type="button" class="chip ${issueFilter===t.key?'active':''}" data-issue-filter="${t.key}">${t.icon} ${t.label} (${counts[t.key]})</button>`)).join('');
-  const A=aggRows(uniqueIssueSkus(current).map(p=>p.r));
-  const tiles=tileHtml('Проблемных SKU',fmt(uniqueIssueSkus(current).length),'kpi-danger',`${current.length} сигналов`) + tileHtml('ТО',fmt(A.to)+' ₽','kpi-accent') + tileHtml('Валовая прибыль',fmt(A.gp)+' ₽','',`маржа ${A.margin.toFixed(1)}%`) + tileHtml('Склад',fmt(A.stockSum)+' ₽','',`${fmt(A.stock)} шт`) + tileHtml('Оборачиваемость',fmtDays(A.turnover)+' дн.','',`${A.rate.toFixed(1)} шт/дн`);
-  issuesTitle.textContent=`🚨 Проблемы · ${issueFilter === 'all' ? 'все сигналы' : ISSUE_TYPES.find(t=>t.key===issueFilter).label}`;
-  issuesContent.innerHTML=`<div style="display:flex;gap:8px;margin-bottom:8px"><button type="button" class="btn-export" id="exportProblemsBtn">⬇️ Excel</button></div>${issueSummary(all)}<div class="logi-bar"><span>🛒 Заказ: <b>${fmtDate(log.orderDate)}</b></span><span>🚚 Поставка: <b>${fmtDate(log.arrivalDate)}</b></span><span>🛡 Покрытие: <b>${cfg.safetyDays} дн.</b></span></div><div class="chip-row">${chips}</div>${issueCrumbsHtml()}${issueTabsHtml(issuePath.length,current)}<div class="kpi-grid">${tiles}</div>${issueTab==='groups' && issuePath.length<4 ? issueGroupsTable(current,issuePath.length) : issueItemsTable(current)}<div class="hint" style="margin-top:6px">Клик по группе — углубиться; «Товары» доступен на любом уровне. Клик по КУБУ открывает его карточку.</div>`;
-  issuesCard.classList.remove('hidden'); showStatus(`✅ Найдено ${all.length} сигналов по ${uniqueIssueSkus(all).length} SKU.`, 'success');
+  const crumbs=['<button type="button" class="crumb" data-issue-root>🏢 '+escapeHtml(issueStoreName())+'</button>'].concat(issuePath.map((p,i)=>`<button type="button" class="crumb ${i===issuePath.length-1?'current':''}" data-issue-crumb="${i}">${escapeHtml(issuePathLabel(i,p))}</button>`)).join('');
+  const chips=[`<button type="button" class="chip ${issueFilter==='all'?'active':''}" data-issue-filter="all">Все сигналы (${all.length})</button>`].concat(ISSUE_TYPES.map(t=>`<button type="button" class="chip ${issueFilter===t.key?'active':''}" data-issue-filter="${t.key}" title="${t.desc}">${t.icon} ${t.label} (${counts[t.key]})</button>`)).join('');
+  issuesTitle.textContent=`🚨 Проблемы · ${issueStoreName()}`;
+  issuesContent.innerHTML=`<div style="display:flex;gap:8px;margin-bottom:8px"><button type="button" class="btn-export" id="exportProblemsBtn">⬇️ Excel</button></div>${issueSummary(all)}<div class="logi-bar"><span>🛒 Заказ: <b>${fmtDate(log.orderDate)}</b></span><span>🚚 Поставка: <b>${fmtDate(log.arrivalDate)}</b></span><span>🛡 Покрытие: <b>${cfg.safetyDays} дн.</b></span></div><div class="chip-row">${chips}</div><div class="crumb-row">${crumbs}</div><div class="top-summary">${issuePath.length < 4 ? (issuePath.length === 0 ? 'Выберите магазин, затем отдел, чтобы углубиться до SKU.' : 'Выберите следующий уровень, чтобы углубиться до SKU.') : `SKU: ${uniqueIssueSkus(list.filter(p => issuePath.every((x,i) => issuePathKey(p,i) === x))).length} проблемных SKU в выбранном разделе.`}</div>${issueTree(list,log)}`;
+  issuesCard.classList.remove('hidden');
+  showStatus(`✅ Найдено ${all.length} сигналов по ${uniqueIssueSkus(all).length} SKU.`, 'success');
 }
 issuesCard.addEventListener('click', e => {
   if (e.target.closest('#exportProblemsBtn')) return exportProblemsToExcel();
-  const f=e.target.closest('[data-issue-filter]'); if(f){ issueFilter=f.dataset.issueFilter; issuePath=[]; issueTab='groups'; return renderIssues(); }
-  const d=e.target.closest('[data-issue-drill]'); if(d){ issuePath.push(d.dataset.issueDrill); issueTab=issuePath.length >= 4 ? 'items' : 'groups'; return renderIssues(); }
-  const c=e.target.closest('[data-issue-crumb]'); if(c){ issuePath=issuePath.slice(0,+c.dataset.issueCrumb+1); issueTab=issuePath.length >= 4 ? 'items' : 'groups'; return renderIssues(); }
-  if(e.target.closest('[data-issue-root]')){ issuePath=[]; issueTab='groups'; return renderIssues(); }
-  const tab=e.target.closest('[data-issue-tab]'); if(tab){ issueTab=tab.dataset.issueTab; return renderIssues(); }
-  const cube=e.target.closest('[data-open-cube]'); if(cube) return openCube(cube.dataset.openCube);
+  const f=e.target.closest('[data-issue-filter]'); if(f){ issueFilter=f.dataset.issueFilter; issuePath=[]; return renderIssues(); }
+  const d=e.target.closest('[data-issue-drill]'); if(d){ issuePath.push(d.dataset.issueDrill); return renderIssues(); }
+  const c=e.target.closest('[data-issue-crumb]'); if(c){ issuePath=issuePath.slice(0,+c.dataset.issueCrumb+1); return renderIssues(); }
+  if(e.target.closest('[data-issue-root]')){ issuePath=[]; return renderIssues(); }
   const p=e.target.closest('[data-open-product]'); if(p) openProduct(p.dataset.code,null);
 });
 function exportProblemsToExcel() {

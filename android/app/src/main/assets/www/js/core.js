@@ -70,7 +70,6 @@ let topMetric = 'to';
 let topCodesValue = '';
 let issueFilter = 'all';
 let issuePath = [];
-let issueTab = 'groups';
 let issueCfgOpen = false;
 let modalChart = null;
 let dashCharts = [];
