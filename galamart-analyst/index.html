@@ -213,6 +213,22 @@
     .rec-ok   { background: var(--success-bg); color: #065f46; }
     .rec-dark { background: #1e293b; color: #f1f5f9; }
     .top-summary { font-size: 0.85rem; color: var(--text-muted); margin: 10px 0; }
+    .issues-hero { display:grid; grid-template-columns:1.35fr 1fr; gap:12px; margin:12px 0; }
+    .issues-score { border-radius:14px; padding:16px; color:#fff; background:linear-gradient(135deg,#172554,#2563eb); }
+    .issues-score .big { font-size:1.8rem; font-weight:800; margin:5px 0; }
+    .issues-score .muted { color:#bfdbfe; font-size:.8rem; }
+    .issue-kpis { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+    .issue-kpi { border:1px solid var(--border); border-radius:10px; padding:10px; background:#fff; }
+    .issue-kpi b { display:block; font-size:1rem; margin-top:3px; }
+    .issue-kpi span { color:var(--text-muted); font-size:.7rem; }
+    .issue-tree { border:1px solid var(--border); border-radius:12px; overflow:hidden; margin-top:10px; }
+    .issue-node { display:flex; align-items:center; gap:10px; width:100%; text-align:left; padding:12px; border:0; border-bottom:1px solid var(--border); background:#fff; color:var(--text); }
+    .issue-node:hover { background:#eff6ff; transform:none; }
+    .issue-node:last-child { border-bottom:0; }
+    .issue-node .node-name { font-weight:700; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .issue-node .node-stats { font-size:.75rem; color:var(--text-muted); text-align:right; }
+    .issue-node .node-count { color:#b91c1c; font-weight:800; white-space:nowrap; }
+    .issue-empty { padding:20px; color:var(--text-muted); text-align:center; }
 
     .zones-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
     .zone-card { border: 1px solid var(--border); border-radius: 12px; padding: 14px; background: #fff; cursor: pointer; transition: 0.2s; position: relative; min-height: 150px; }
@@ -315,8 +331,13 @@
       .an-codes-bar input, .an-codes-bar button { max-width: none; width: 100%; }
       .chip-row { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 2px; -webkit-overflow-scrolling: touch; }
       .chip { flex: 0 0 auto; min-height: 40px; }
+      .issues-hero { grid-template-columns:1fr; }
+      .issue-node { min-height:58px; padding:10px; }
+      .issue-node .node-stats { max-width:105px; }
       .modal-overlay { align-items: flex-end; padding: 0; }
-      .modal { max-height: 92vh; border-radius: 16px 16px 0 0; padding: 14px; }
+      /* Скролл остаётся внутри белой поверхности модального окна: оверлей не
+         должен быть виден под длинными карточками на Android/iOS. */
+      .modal { box-sizing: border-box; flex: 0 1 auto; max-height: 92vh; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; border-radius: 16px 16px 0 0; padding: 14px 14px max(14px, env(safe-area-inset-bottom)); background: #fff; }
       .modal-head { position: sticky; top: -14px; background: #fff; padding-top: 4px; z-index: 2; }
       .mini-table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
     }
