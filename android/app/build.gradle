@@ -26,3 +26,12 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
 }
+
+// Keep the WebView assets identical to the offline web source for every APK build.
+tasks.register('syncWebAssets', Sync) {
+    from(rootProject.file('galamart-analyst'))
+    into(layout.projectDirectory.dir('src/main/assets/www'))
+}
+tasks.named('preBuild').configure {
+    dependsOn(tasks.named('syncWebAssets'))
+}
