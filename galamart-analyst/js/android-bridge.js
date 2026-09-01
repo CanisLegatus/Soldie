@@ -1,3 +1,4 @@
+window.__bootStamp && window.__bootStamp('js/android-bridge.js: выполнение');
 /* Android WebView bridge. In a normal browser this file intentionally does nothing. */
 (() => {
   if (!window.AndroidBridge) return;

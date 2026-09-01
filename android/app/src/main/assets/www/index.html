@@ -130,6 +130,8 @@
     .suggested      { color: var(--primary); font-weight: 600; }
     .suggested-fire { color: var(--error);   font-weight: 700; }
 
+    #visionCard { background: var(--bg); border-radius: var(--radius); overflow: hidden; margin-bottom: 18px; }
+    #visionFrame { display: block; width: 100%; min-height: calc(100vh - 40px); border: 0; background: #f5f7fa; }
     .hidden { display: none !important; }
     .text-muted { color: var(--text-muted); }
     .fire-text { color: var(--error); font-weight: 700; }
@@ -368,6 +370,7 @@
               <button type="button" class="seg-btn" data-mode="analysis">🔬 Анализ</button>
               <button type="button" class="seg-btn" data-mode="top100">🏆 ТОП-100</button>
               <button type="button" class="seg-btn" data-mode="issues">🚨 Проблемы</button>
+              <button type="button" class="seg-btn" data-mode="vision">👁 Vision</button>
             </div>
           </div>
           <div class="mode-cluster">
@@ -413,6 +416,10 @@
     </div>
 
     <div id="status" class="status"></div>
+  </div>
+
+  <div id="visionCard" class="hidden">
+    <iframe id="visionFrame" title="Vision — дашборд директора магазина" src="vision/index.html"></iframe>
   </div>
 
   <div id="dashCard" class="card hidden">
@@ -513,27 +520,62 @@
 
 <!-- Библиотеки локально (скачать и положить в папку lib/) -->
 <script>
-  // Показываем понятную ошибку вместо «не нажимается», если Android-браузер заблокировал файл скрипта.
+  // Диагностика запуска: при открытии index.html через file:// Chromium часто отдаёт
+  // только «Script error.». Журнал ниже сохраняет точный ресурс, этап и координаты.
   window.__bootErrors = [];
-  window.addEventListener('error', event => {
-    window.__bootErrors.push(event.message || `Не удалось загрузить: ${event.filename || 'скрипт'}`);
+  window.__bootTrace = [];
+  window.__bootCurrent = 'разметка index.html';
+  window.__bootStamp = function (stage, detail) {
+    window.__bootCurrent = stage;
+    window.__bootTrace.push({ stage: stage, detail: detail || '', time: new Date().toISOString() });
+  };
+  window.__bootStamp('начало загрузки');
+  window.addEventListener('error', function (event) {
+    var target = event.target;
+    var resource = target && target !== window && target.tagName
+      ? '<' + target.tagName.toLowerCase() + '> ' + (target.src || target.href || '(без src/href)')
+      : (event.filename || window.__bootCurrent);
+    var message = event.message || 'Ошибка загрузки ресурса';
+    var position = event.lineno ? ' строка ' + event.lineno + ':' + (event.colno || 0) : '';
+    window.__bootErrors.push('Ресурс: ' + resource + '\nЭтап: ' + window.__bootCurrent + '\nОшибка: ' + message + position);
+    window.__bootTrace.push({ stage: 'ОШИБКА', detail: resource + ' — ' + message + position, time: new Date().toISOString() });
+  }, true);
+  window.addEventListener('load', function (event) {
+    var target = event.target;
+    if (target && target.tagName && (target.tagName === 'SCRIPT' || target.tagName === 'LINK')) {
+      window.__bootTrace.push({ stage: 'загружен ресурс', detail: target.src || target.href || '', time: new Date().toISOString() });
+    }
   }, true);
 </script>
-<script defer src="lib/xlsx.full.min.js"></script>
-<script defer src="lib/chart.umd.min.js"></script>
-<script defer src="js/android-bridge.js"></script>
+<script>window.__bootStamp('lib/xlsx.full.min.js');</script>
+<script src="lib/xlsx.full.min.js"></script>
+<script>window.__bootStamp('lib/chart.umd.min.js');</script>
+<script src="lib/chart.umd.min.js"></script>
+<script>window.__bootStamp('js/android-bridge.js');</script>
+<script src="js/android-bridge.js"></script>
 
 <!-- Модули приложения -->
-<script defer src="js/core.js"></script>
-<script defer src="js/markdown.js"></script>
-<script defer src="js/browse.js"></script>
-<script defer src="js/problems.js"></script>
-<script defer src="js/dashboard.js"></script>
-<script defer src="js/analysis.js"></script>
-<script defer src="js/verify.js"></script>
-<script defer src="js/top100.js"></script>
-<script defer src="js/cards.js"></script>
-<script defer src="js/zones-gifts.js"></script>
-<script defer src="js/app.js"></script>
+<script>window.__bootStamp('js/core.js');</script>
+<script src="js/core.js"></script>
+<script>window.__bootStamp('js/markdown.js');</script>
+<script src="js/markdown.js"></script>
+<script>window.__bootStamp('js/browse.js');</script>
+<script src="js/browse.js"></script>
+<script>window.__bootStamp('js/problems.js');</script>
+<script src="js/problems.js"></script>
+<script>window.__bootStamp('js/dashboard.js');</script>
+<script src="js/dashboard.js"></script>
+<script>window.__bootStamp('js/analysis.js');</script>
+<script src="js/analysis.js"></script>
+<script>window.__bootStamp('js/verify.js');</script>
+<script src="js/verify.js"></script>
+<script>window.__bootStamp('js/top100.js');</script>
+<script src="js/top100.js"></script>
+<script>window.__bootStamp('js/cards.js');</script>
+<script src="js/cards.js"></script>
+<script>window.__bootStamp('js/zones-gifts.js');</script>
+<script src="js/zones-gifts.js"></script>
+<script>window.__bootStamp('js/app.js');</script>
+<script src="js/app.js"></script>
 </body>
 </html>
