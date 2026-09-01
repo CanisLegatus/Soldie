@@ -1,3 +1,4 @@
+window.__bootStamp && window.__bootStamp('js/app.js: выполнение');
 /* ══════════════════════════════════════════════════════════════
    app.js — модальное ядро, переключение режимов, «Обработать»,
    проверка библиотек, инициализация
@@ -235,7 +236,12 @@ processBtn.addEventListener('click', async () => {
 
 // ── Проверка библиотек и старт ──
 if (window.__bootErrors?.length) {
-  showStatus(`❌ Не все файлы приложения загрузились.\n${window.__bootErrors.join('\n')}\n\nРаспакуйте архив целиком в одну папку и откройте index.html в Chrome или браузере с доступом к файлам.`, 'error');
+  const trace = (window.__bootTrace || []).map((entry, index) =>
+    `${index + 1}. ${entry.time || '—'} · ${entry.stage}${entry.detail ? ` · ${entry.detail}` : ''}`
+  ).join('\n');
+  const details = window.__bootErrors.map((error, index) => `#${index + 1}\n${error}`).join('\n\n');
+  console.error('Подробная диагностика загрузки приложения:', { errors: window.__bootErrors, trace: window.__bootTrace });
+  showStatus(`❌ Не все файлы приложения загрузились.\n\nПОДРОБНОСТИ:\n${details}\n\nЖУРНАЛ ЗАПУСКА:\n${trace}\n\nСкопируйте весь текст этого сообщения и передайте разработчику. Проверьте, что архив распакован целиком и все папки lib/, js/ и vision/ находятся рядом с index.html.`, 'error');
 }
 if (typeof XLSX === 'undefined') {
   showStatus('❌ Не найден файл lib/xlsx.full.min.js. Скачайте его с https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js и положите в папку lib/.', 'error');
