@@ -418,9 +418,7 @@
     <div id="status" class="status"></div>
   </div>
 
-  <div id="visionCard" class="hidden">
-    <iframe id="visionFrame" title="Vision — дашборд директора магазина" src="vision/index.html"></iframe>
-  </div>
+  <div id="visionCard" class="hidden"><div id="visionHost"></div></div>
 
   <div id="dashCard" class="card hidden">
     <div class="result-header">
@@ -537,11 +535,7 @@
       : (event.filename || window.__bootCurrent);
     var message = event.message || 'Ошибка загрузки ресурса';
     var position = event.lineno ? ' строка ' + event.lineno + ':' + (event.colno || 0) : '';
-    var exception = event.error
-      ? '\nИсключение: ' + (event.error.name || 'Error') + ': ' + (event.error.message || String(event.error))
-        + (event.error.stack ? '\nStack: ' + event.error.stack : '')
-      : '';
-    window.__bootErrors.push('Ресурс: ' + resource + '\nЭтап: ' + window.__bootCurrent + '\nОшибка: ' + message + position + exception);
+    window.__bootErrors.push('Ресурс: ' + resource + '\nЭтап: ' + window.__bootCurrent + '\nОшибка: ' + message + position);
     window.__bootTrace.push({ stage: 'ОШИБКА', detail: resource + ' — ' + message + position, time: new Date().toISOString() });
   }, true);
   window.addEventListener('load', function (event) {
@@ -559,27 +553,17 @@
 <script src="js/android-bridge.js"></script>
 
 <!-- Модули приложения -->
-<script>window.__bootStamp('js/core.js');</script>
-<script src="js/core.js"></script>
-<script>window.__bootStamp('js/markdown.js');</script>
-<script src="js/markdown.js"></script>
-<script>window.__bootStamp('js/browse.js');</script>
-<script src="js/browse.js"></script>
-<script>window.__bootStamp('js/problems.js');</script>
-<script src="js/problems.js"></script>
-<script>window.__bootStamp('js/dashboard.js');</script>
-<script src="js/dashboard.js"></script>
-<script>window.__bootStamp('js/analysis.js');</script>
-<script src="js/analysis.js"></script>
-<script>window.__bootStamp('js/verify.js');</script>
-<script src="js/verify.js"></script>
-<script>window.__bootStamp('js/top100.js');</script>
-<script src="js/top100.js"></script>
-<script>window.__bootStamp('js/cards.js');</script>
-<script src="js/cards.js"></script>
-<script>window.__bootStamp('js/zones-gifts.js');</script>
-<script src="js/zones-gifts.js"></script>
-<script>window.__bootStamp('js/app.js');</script>
-<script src="js/app.js"></script>
+<script defer src="js/core.js"></script>
+<script defer src="js/markdown.js"></script>
+<script defer src="js/browse.js"></script>
+<script defer src="js/problems.js"></script>
+<script defer src="js/dashboard.js"></script>
+<script defer src="js/vision.js"></script>
+<script defer src="js/analysis.js"></script>
+<script defer src="js/verify.js"></script>
+<script defer src="js/top100.js"></script>
+<script defer src="js/cards.js"></script>
+<script defer src="js/zones-gifts.js"></script>
+<script defer src="js/app.js"></script>
 </body>
 </html>
