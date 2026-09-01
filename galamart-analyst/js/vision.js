@@ -1,0 +1,1850 @@
+/* Vision — isolated director dashboard, migrated from vision/vision.html. */
+(function () {
+  "use strict";
+  var host = document.getElementById('visionHost');
+  if (!host || !host.attachShadow) return;
+  var root = host.attachShadow({ mode: 'open' });
+  root.innerHTML = '<link rel="stylesheet" href="vision.css">' + '\n\n<header>\n  <div class="wrap hbar">\n    <div class="logo">V</div>\n    <div><h1>Vision</h1><small>дашборд директора магазина · август 2026</small></div>\n    <div class="hspace">\n      <span class="fchip" id="ch2"><span class="dot"></span><span id="ch2t">Статистика — не загружена</span></span>\n      <span class="fchip" id="ch1"><span class="dot"></span><span id="ch1t">План-факт — не загружен</span></span>\n      <button class="btn" data-vision-file="2">⬆ Статистика</button>\n      <button class="btn" data-vision-file="1">⬆ План-факт</button>\n    </div>\n  </div>\n</header>\n\n<section id="hero">\n  <div class="wrap">\n    <div class="lead">\n      <h2><em>Vision</em> — весь магазин на одном экране</h2>\n      <p>Загрузите «Статистику расширенную» (обязательно) и «Рейтинг / план-факт» (прогнозы, дневная динамика, ассортимент). Каждый показатель кликабелен — внутри драйвер-дерево: за счёт чего магазин растёт или отстаёт.</p>\n    </div>\n    <div class="drops">\n      <div class="drop" id="d2">\n        <h3>📗 Файл 2 · Статистика (расширенная) ГМ</h3>\n        <p>Вкладка «статистика расширенная»: ТО, ВП, наценка, чеки, средний чек, м², остатки, SKU — план/факт и прошлый год.</p>\n        <div class="st" id="dst2"></div>\n      </div>\n      <div class="drop" id="d1">\n        <h3>📘 Файл 1 · Рейтинг и план-факт</h3>\n        <p>Прогнозы, прирост МТМ, LFL, дневные план/факт/прогноз по ТО и чекам, продажи по товарным группам.</p>\n        <div class="st" id="dst1"></div>\n      </div>\n    </div>\n  </div>\n</section>\n\n<main id="app" class="wrap hidden">\n  <div class="cbar">\n    <div class="field"><label>Поиск магазина</label><input id="storeQ" placeholder="Начните вводить…" style="width:220px"/></div>\n    <div class="field"><label>Магазин</label><select id="storeSel"></select></div>\n    <div class="field"><label>Сравнивать с</label>\n      <select id="mode">\n        <option value="net">Вся сеть</option>\n        <option value="fo">Мой федеральный округ</option>\n        <option value="reg">Мой регион</option>\n        <option value="lfl">Моя LFL-группа</option>\n        <option value="sim">Похожие магазины</option>\n        <option value="custom">Произвольная выборка</option>\n      </select>\n    </div>\n    <div class="field"><label>Выборка</label><button class="btn" id="customBtn">🎯 <span id="customLbl">Собрать выборку</span></button></div>\n    <div class="tags" id="tags"></div>\n  </div>\n  <div class="tabs" id="tabs"></div>\n  <section id="view"></section>\n</main>\n\n<div class="modal" id="customM">\n  <div class="mbox">\n    <div class="mhead"><h3>Произвольная выборка для сравнения</h3><button class="btn" id="mclose">✕</button></div>\n    <div class="mbody">\n      <input id="msearch" placeholder="Поиск по названию, региону, округу…"/>\n      <div class="mlist" id="mlist"></div>\n    </div>\n    <div class="mfoot">\n      <span class="cnt" id="mcnt"></span>\n      <div style="display:flex;gap:8px">\n        <button class="btn" id="mclear">Очистить</button>\n        <button class="btn" id="mapply" style="background:var(--acc);border-color:var(--acc);color:#fff">Применить</button>\n      </div>\n    </div>\n  </div>\n</div>\n\n<div class="modal" id="drillM">\n  <div class="mbox wide">\n    <div class="mhead"><h3 id="drillTitle">Анализ показателя</h3><button class="btn" id="drillClose">✕</button></div>\n    <div class="mbody" id="drillBody"></div>\n  </div>\n</div>\n\n<div id="busy"><div class="spin"></div><div class="bt" id="busyT">Читаю файл…</div></div>\n<div id="statusline">Готов к загрузке файлов</div>\n<footer>Vision · данные читаются локально в браузере · кликните на любую карточку или показатель, чтобы увидеть драйвер-анализ</footer>\n\n<input type="file" id="f1" accept=".xlsx,.xls" style="position:fixed;top:-100px;left:-100px;width:1px;height:1px;opacity:0"/>\n<input type="file" id="f2" accept=".xlsx,.xls" style="position:fixed;top:-100px;left:-100px;width:1px;height:1px;opacity:0"/>\n\n';
+  var document = root;
+
+function $(id){return document.getElementById(id);}
+function vStatus(msg,isErr){
+  var el=document.getElementById('statusline');
+  if(el){el.textContent=msg;el.style.color=isErr?'#D92D20':'#667085';}
+}
+function showBusy(on,text){
+  var b=document.getElementById('busy');
+  if(!b){return;}
+  if(text){var t=document.getElementById('busyT');if(t){t.textContent=text;}}
+  if(on){b.classList.add('on');}else{b.classList.remove('on');}
+}
+function pickFile(w){
+  var inp=document.getElementById(w===1?'f1':'f2');
+  if(inp){inp.click();}
+}
+function onFilePicked(w,inp){
+  var f=(inp&&inp.files&&inp.files[0])?inp.files[0]:null;
+  if(!f){vStatus('Файл не получен',true);return;}
+  loadWorkbook(w,f);
+}
+function loadWorkbook(w,f){
+  showBusy(true,'Читаю «'+f.name+'»…');
+  vStatus('Читаю «'+f.name+'»…');
+  if(typeof XLSX==='undefined'){
+    showBusy(false);
+    vStatus('Библиотека XLSX не загрузилась — проверьте интернет и обновите страницу',true);
+    return;
+  }
+  var rd=new FileReader();
+  rd.onerror=function(){showBusy(false);vStatus('Не удалось прочитать файл',true);};
+  rd.onload=function(){
+    var wb=null;
+    try{
+      wb=XLSX.read(rd.result,{type:'array',cellDates:true});
+    }catch(err){
+      showBusy(false);
+      vStatus('Файл не читается как XLSX: '+(err&&err.message?err.message:err),true);
+      return;
+    }
+    showBusy(true,'Разбираю «'+f.name+'»…');
+    setTimeout(function(){
+      try{
+        if(typeof window.vIngest==='function'){
+          window.vIngest(w,wb,f.name);
+        }else{
+          vStatus('Модуль дашборда не загрузился (см. ошибку скрипта) — обновите страницу',true);
+        }
+      }catch(err2){
+        vStatus('Ошибка обработки: '+(err2&&err2.message?err2.message:err2),true);
+      }
+      showBusy(false);
+    },30);
+  };
+  rd.readAsArrayBuffer(f);
+}
+window.addEventListener('error',function(e){
+  if(e&&e.message){vStatus('Ошибка скрипта: '+e.message,true);}
+});
+
+
+(function(){
+"use strict";
+
+var HAS_CHART=(typeof Chart!=='undefined');
+var CH={};
+var ST={stores:[],byNorm:{},sel:null,mode:'net',custom:{},tab:'ov',sort:{k:'to',d:-1}};
+var F1={rating:{},dailyTO:{},dailyChk:{},net:null,tn:{},loaded:false};
+var TNIDX={groups:{},totalRev:0,regionTotals:{}};
+
+function $(id){return document.getElementById(id);}
+function s(v){return v==null?'':String(v);}
+function esc(q){return String(q).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');}
+function num(v){
+  if(v==null||v===''){return null;}
+  if(v instanceof Date){return null;}
+  if(typeof v==='number'){return isFinite(v)?v:null;}
+  var t=String(v).replace(/\s/g,'').replace(/%/g,'');
+  if(!t||t==='-'){return null;}
+  t=t.replace(/,/g,'');
+  var n=parseFloat(t);
+  return isFinite(n)?n:null;
+}
+function isDateLike(c){
+  if(c instanceof Date){return true;}
+  var t=s(c).trim();
+  return /^\d{1,2}[.\/]\d{1,2}[.\/]\d{2,4}$/.test(t);
+}
+function dlab(c){
+  if(c instanceof Date){return ('0'+c.getDate()).slice(-2)+'.'+('0'+(c.getMonth()+1)).slice(-2);}
+  var m=s(c).match(/(\d{1,2})[.\/](\d{1,2})/);
+  if(m){return ('0'+m[1]).slice(-2)+'.'+('0'+m[2]).slice(-2);}
+  return s(c);
+}
+function fmt(v,d){
+  if(v==null||!isFinite(v)){return '—';}
+  return v.toLocaleString('ru-RU',{minimumFractionDigits:d||0,maximumFractionDigits:d||0});
+}
+function fmtM(v){
+  if(v==null||!isFinite(v)){return '—';}
+  if(Math.abs(v)>=1000){return fmt(v/1000,2)+' млн';}
+  return fmt(v,0)+' тыс';
+}
+function norm(q){return String(q||'').toLowerCase().replace(/ё/g,'е').replace(/\s+/g,' ').trim();}
+function cnt(o){var n=0,k;for(k in o){if(Object.prototype.hasOwnProperty.call(o,k)){n++;}}return n;}
+function rowsOf(ws){return XLSX.utils.sheet_to_json(ws,{header:1,raw:false,defval:null});}
+function stat(msg,isErr){
+  var el=$('statusline');
+  if(el){el.textContent=msg;el.style.color=isErr?'#D92D20':'#667085';}
+}
+function selS(){return ST.byNorm[ST.sel]||null;}
+function turnOf(st){
+  if(st&&st.ss>0&&st.days){return st.stock/(st.ss/st.days);}
+  return null;
+}
+
+var M={
+  to:{l:'Товарооборот',u:'тыс ₽',d:0,h:1},
+  planTO:{l:'План ТО',u:'тыс ₽',d:0,h:0},
+  fulTO:{l:'Выполнение плана ТО',u:'%',d:1,h:1},
+  progTO:{l:'Прогноз ТО',u:'тыс ₽',d:0,h:1},
+  progFul:{l:'Прогноз выполнения ТО',u:'%',d:1,h:1},
+  to25:{l:'ТО 2025',u:'тыс ₽',d:0,h:0},
+  growthTO:{l:'Прирост ТО к 2025',u:'%',d:1,h:1},
+  growthMoM:{l:'Прирост ТО МТМ',u:'%',d:1,h:1},
+  lflMoM:{l:'LFL прирост МТМ',u:'%',d:1,h:1},
+  vp:{l:'Валовая прибыль',u:'тыс ₽',d:0,h:1},
+  planVP:{l:'План ВП',u:'тыс ₽',d:0,h:0},
+  fulVP:{l:'Выполнение плана ВП',u:'%',d:1,h:1},
+  progVP:{l:'Прогноз ВП',u:'тыс ₽',d:0,h:1},
+  progFulVP:{l:'Прогноз выполнения ВП',u:'%',d:1,h:1},
+  vp25:{l:'ВП 2025',u:'тыс ₽',d:0,h:0},
+  growthVP:{l:'Прирост ВП',u:'%',d:1,h:1},
+  shareVP:{l:'Доля ВП в ТО',u:'%',d:1,h:1},
+  markup:{l:'Наценка',u:'%',d:1,h:1},
+  ss:{l:'Себестоимость',u:'тыс ₽',d:0,h:0},
+  ss25:{l:'Себестоимость 2025',u:'тыс ₽',d:0,h:0},
+  growthSS:{l:'Прирост себестоимости',u:'%',d:1,h:-1},
+  checks:{l:'Чеки',u:'шт',d:0,h:1},
+  planChecks:{l:'План чеков',u:'шт',d:0,h:0},
+  fulChecks:{l:'Выполнение плана чеков',u:'%',d:1,h:1},
+  checks25:{l:'Чеки 2025',u:'шт',d:0,h:0},
+  growthChecks:{l:'Прирост чеков',u:'%',d:1,h:1},
+  avgCheck:{l:'Средний чек',u:'₽',d:0,h:1},
+  planAvgCheck:{l:'План ср. чека',u:'₽',d:0,h:0},
+  fulAvgCheck:{l:'Выполнение плана чека',u:'%',d:1,h:1},
+  avgCheck25:{l:'Средний чек 2025',u:'₽',d:0,h:0},
+  growthAvgCheck:{l:'Прирост среднего чека',u:'%',d:1,h:1},
+  avgPrice:{l:'Средняя цена товара',u:'₽',d:0,h:0},
+  avgPrice25:{l:'Цена товара 2025',u:'₽',d:0,h:0},
+  growthAvgPrice:{l:'Прирост цены',u:'%',d:1,h:0},
+  vpPerCheck:{l:'ВП на чек',u:'₽',d:0,h:1},
+  vpPerCheck25:{l:'ВП на чек 2025',u:'₽',d:0,h:0},
+  growthVPCheck:{l:'Прирост ВП на чек',u:'%',d:1,h:1},
+  qty:{l:'Продано штук',u:'шт',d:0,h:1},
+  qty25:{l:'Штук 2025',u:'шт',d:0,h:0},
+  growthQty:{l:'Прирост штук',u:'%',d:1,h:1},
+  qtyPerCheck:{l:'Штук в чеке',u:'шт',d:2,h:1},
+  qtyPerCheck25:{l:'Штук в чеке 2025',u:'шт',d:2,h:0},
+  growthQtyCheck:{l:'Прирост наполнения чека',u:'%',d:1,h:1},
+  toPerM2:{l:'ТО на м² в день',u:'₽',d:0,h:1},
+  toPerM225:{l:'ТО на м² 2025',u:'₽',d:0,h:0},
+  growthTOM2:{l:'Прирост ТО на м²',u:'%',d:1,h:1},
+  vpPerM2:{l:'ВП на м² в день',u:'₽',d:0,h:1},
+  vpPerM225:{l:'ВП на м² 2025',u:'₽',d:0,h:0},
+  growthVPM2:{l:'Прирост ВП на м²',u:'%',d:1,h:1},
+  areaTrade:{l:'Торговая площадь',u:'м²',d:0,h:0},
+  areaTrade25:{l:'Торг. площадь 2025',u:'м²',d:0,h:0},
+  areaTotal:{l:'Общая площадь',u:'м²',d:0,h:0},
+  days:{l:'Рабочих дней',u:'дн',d:0,h:0},
+  stock:{l:'Остатки по себестоимости',u:'тыс ₽',d:0,h:0},
+  sku:{l:'Остаток SKU',u:'шт',d:0,h:0},
+  skuPerM2:{l:'SKU на м²',u:'шт',d:1,h:0},
+  fillTrade:{l:'Наполнение торг. зала',u:'тыс ₽/м²',d:1,h:0},
+  fillTotal:{l:'Наполнение общ. площади',u:'тыс ₽/м²',d:1,h:0},
+  turnDays:{l:'Оборачиваемость остатков',u:'дн',d:0,h:-1}
+};
+var PLANMAP={to:'planTO',vp:'planVP',checks:'planChecks',avgCheck:'planAvgCheck'};
+var FULMAP={to:'fulTO',vp:'fulVP',checks:'fulChecks',avgCheck:'fulAvgCheck'};
+var Y25={to:'to25',vp:'vp25',checks:'checks25',avgCheck:'avgCheck25',qty:'qty25',ss:'ss25',toPerM2:'toPerM225',vpPerM2:'vpPerM225',qtyPerCheck:'qtyPerCheck25',vpPerCheck:'vpPerCheck25',avgPrice:'avgPrice25'};
+var GROW={to:'growthTO',vp:'growthVP',checks:'growthChecks',avgCheck:'growthAvgCheck',qty:'growthQty',ss:'growthSS',toPerM2:'growthTOM2',vpPerM2:'growthVPM2',qtyPerCheck:'growthQtyCheck',vpPerCheck:'growthVPCheck',avgPrice:'growthAvgPrice'};
+function vfmt(k,v){
+  if(v==null||!isFinite(v)){return '—';}
+  return fmt(v,M[k]?M[k].d:0);
+}
+
+function rowHasCell(r,val){
+  for(var i=0;i<r.length;i++){if(s(r[i]).trim()===val){return true;}}
+  return false;
+}
+function rowHasMag(r){
+  for(var i=0;i<r.length;i++){if(s(r[i]).trim().toLowerCase()==='магазин'){return true;}}
+  return false;
+}
+function rowHasSub(r,sub){
+  for(var i=0;i<r.length;i++){if(s(r[i]).indexOf(sub)>=0){return true;}}
+  return false;
+}
+function scoreRec(rec){
+  var n=0;
+  var ks=['planTO','to25','checks25','avgPrice','vp25','stock'];
+  for(var i=0;i<ks.length;i++){if(rec[ks[i]]!=null){n++;}}
+  return n;
+}
+function emptyStore(nm,lfl,lfl2,region,fo,open){
+  return {
+    name:nm,lfl:lfl,lfl2:lfl2,region:region,fo:fo,open:open,
+    areaTotal:null,areaTrade:null,areaTrade25:null,days:null,days25:null,
+    planTO:null,fulTO:null,to:null,to25:null,growthTO:null,
+    toPerM2:null,toPerM225:null,growthTOM2:null,
+    planVP:null,fulVP:null,vp:null,vp25:null,growthVP:null,
+    shareVP:null,vpPerM2:null,vpPerM225:null,growthVPM2:null,
+    ss:null,ss25:null,growthSS:null,markup:null,
+    qty:null,qty25:null,growthQty:null,
+    planChecks:null,fulChecks:null,checks:null,checks25:null,growthChecks:null,
+    planAvgCheck:null,fulAvgCheck:null,avgCheck:null,avgCheck25:null,growthAvgCheck:null,
+    avgPrice:null,avgPrice25:null,growthAvgPrice:null,
+    vpPerCheck:null,vpPerCheck25:null,growthVPCheck:null,
+    qtyPerCheck:null,qtyPerCheck25:null,growthQtyCheck:null,
+    stock:null,sku:null,skuPerM2:null,fillTotal:null,fillTrade:null
+  };
+}
+function parseStatsBlocks(wb){
+  var names=wb.SheetNames;
+  var target=null,i;
+  for(i=0;i<names.length;i++){
+    if(/расшир/i.test(names[i])){target=names[i];break;}
+  }
+  if(!target){target=names[names.length-1];}
+  var R=rowsOf(wb.Sheets[target]);
+  var byName={};
+  var idx=0;
+  while(idx<R.length){
+    var h=-1,q;
+    for(q=idx;q<R.length;q++){
+      var rr=R[q];
+      if(rr&&rowHasCell(rr,'LFL 1,2')&&rowHasMag(rr)){h=q;break;}
+    }
+    if(h<0){break;}
+    var row=R[h];
+    var hasDate=rowHasSub(row,'Дата технич');
+    var iMag=-1,k;
+    for(k=0;k<row.length;k++){
+      if(s(row[k]).trim().toLowerCase()==='магазин'){iMag=k;break;}
+    }
+    if(iMag<0){idx=h+1;continue;}
+    var b=iMag-3;
+    var j;
+    for(j=h+1;j<R.length;j++){
+      var r=R[j];
+      if(!r){continue;}
+      if(rowHasCell(r,'LFL 1,2')){break;}
+      var nm=s(r[b+3]).trim();
+      var nu=num(r[b+2]);
+      if(!nm||nu==null){continue;}
+      if(/итого|среднее/i.test(nm)){continue;}
+      var rec=emptyStore(nm,s(r[b]).trim(),s(r[b+1]).trim(),s(r[b+4]).trim(),s(r[b+5]).trim(),hasDate?s(r[b+6]).trim():'');
+      if(hasDate){
+        rec.areaTotal=num(r[b+7]);rec.areaTrade=num(r[b+8]);rec.areaTrade25=num(r[b+9]);
+        rec.days=num(r[b+10]);rec.days25=num(r[b+11]);
+        rec.planTO=num(r[b+12]);rec.fulTO=num(r[b+13]);rec.to=num(r[b+14]);rec.to25=num(r[b+15]);rec.growthTO=num(r[b+16]);
+        rec.toPerM2=num(r[b+17]);rec.toPerM225=num(r[b+18]);rec.growthTOM2=num(r[b+19]);
+        rec.planVP=num(r[b+20]);rec.fulVP=num(r[b+21]);rec.vp=num(r[b+22]);rec.vp25=num(r[b+23]);rec.growthVP=num(r[b+24]);
+        rec.shareVP=num(r[b+25]);rec.vpPerM2=num(r[b+26]);rec.vpPerM225=num(r[b+27]);rec.growthVPM2=num(r[b+28]);
+        rec.ss=num(r[b+29]);rec.ss25=num(r[b+30]);rec.growthSS=num(r[b+31]);rec.markup=num(r[b+32]);
+        rec.qty=num(r[b+33]);rec.qty25=num(r[b+34]);rec.growthQty=num(r[b+35]);
+        rec.planChecks=num(r[b+36]);rec.fulChecks=num(r[b+37]);rec.checks=num(r[b+38]);rec.checks25=num(r[b+39]);rec.growthChecks=num(r[b+40]);
+        rec.planAvgCheck=num(r[b+41]);rec.fulAvgCheck=num(r[b+42]);rec.avgCheck=num(r[b+43]);rec.avgCheck25=num(r[b+44]);rec.growthAvgCheck=num(r[b+45]);
+        rec.avgPrice=num(r[b+46]);rec.avgPrice25=num(r[b+47]);rec.growthAvgPrice=num(r[b+48]);
+        rec.vpPerCheck=num(r[b+49]);rec.vpPerCheck25=num(r[b+50]);rec.growthVPCheck=num(r[b+51]);
+        rec.qtyPerCheck=num(r[b+52]);rec.qtyPerCheck25=num(r[b+53]);rec.growthQtyCheck=num(r[b+54]);
+        rec.stock=num(r[b+55]);rec.sku=num(r[b+56]);rec.skuPerM2=num(r[b+57]);rec.fillTotal=num(r[b+58]);rec.fillTrade=num(r[b+59]);
+      }else{
+        rec.areaTotal=num(r[b+6]);rec.areaTrade=num(r[b+7]);rec.days=num(r[b+8]);
+        rec.to=num(r[b+9]);rec.toPerM2=num(r[b+10]);rec.vp=num(r[b+11]);rec.shareVP=num(r[b+12]);rec.vpPerM2=num(r[b+13]);
+        rec.ss=num(r[b+14]);rec.markup=num(r[b+15]);rec.qty=num(r[b+16]);rec.checks=num(r[b+17]);
+        rec.avgCheck=num(r[b+18]);rec.avgPrice=num(r[b+19]);rec.vpPerCheck=num(r[b+20]);rec.qtyPerCheck=num(r[b+21]);
+        rec.stock=num(r[b+22]);rec.sku=num(r[b+23]);rec.skuPerM2=num(r[b+24]);rec.fillTotal=num(r[b+25]);
+      }
+      if(rec.to==null){continue;}
+      var key=norm(nm);
+      var old=byName[key];
+      if(!old||scoreRec(rec)>scoreRec(old)){byName[key]=rec;}
+    }
+    idx=j;
+  }
+  var out=[];
+  var keys=Object.keys(byName);
+  for(i=0;i<keys.length;i++){out.push(byName[keys[i]]);}
+  return out;
+}
+function findColSub(r,cands){
+  for(var i=0;i<r.length;i++){
+    var t=s(r[i]).trim().toLowerCase();
+    if(!t){continue;}
+    for(var j=0;j<cands.length;j++){
+      if(t.indexOf(cands[j])>=0){return i;}
+    }
+  }
+  return -1;
+}
+function parseRatingBlock(R,h,iMag,map){
+  for(var i=h+1;i<R.length;i++){
+    var r=R[i];
+    if(!r){break;}
+    var nm=s(r[iMag]).trim();
+    if(!nm){break;}
+    if(/итого/i.test(nm)){continue;}
+    if(num(r[0])==null){break;}
+    var key=norm(nm);
+    if(!F1.rating[key]){F1.rating[key]={};}
+    var o=F1.rating[key];
+    if(map.progTO>=0){o.progTO=num(r[map.progTO]);}
+    if(map.progFul>=0){o.progFul=num(r[map.progFul]);}
+    if(map.growthMoM>=0){o.growthMoM=num(r[map.growthMoM]);}
+    if(map.lflMoM>=0){o.lflMoM=num(r[map.lflMoM]);}
+    if(map.progVP>=0){o.progVP=num(r[map.progVP]);}
+    if(map.progFulVP>=0){o.progFulVP=num(r[map.progFulVP]);}
+  }
+}
+function parseRatingRows(R){
+  for(var i=0;i<R.length;i++){
+    var r=R[i];
+    if(!r){continue;}
+    var iMag=-1,k;
+    for(k=0;k<r.length;k++){
+      if(s(r[k]).trim().toLowerCase()==='магазин'){iMag=k;break;}
+    }
+    if(iMag<0){continue;}
+    var aTO=findColSub(r,['то-прогноз, тыс']);
+    var bTO=findColSub(r,['то-прогноз выполнения']);
+    if(aTO>=0&&bTO>=0){
+      var cTO=findColSub(r,['то-прирост к прошл']);
+      var dTO=findColSub(r,['lfl прирост','то-lfl']);
+      parseRatingBlock(R,i,iMag,{progTO:aTO,progFul:bTO,growthMoM:cTO,lflMoM:dTO,progVP:-1,progFulVP:-1});
+    }
+    var aVP=findColSub(r,['вп-прогноз, тыс']);
+    var bVP=findColSub(r,['вп-прогноз выполнения']);
+    if(aVP>=0&&bVP>=0){
+      parseRatingBlock(R,i,iMag,{progTO:-1,progFul:-1,growthMoM:-1,lflMoM:-1,progVP:aVP,progFulVP:bVP});
+    }
+  }
+}
+function parseWide(R){
+  var hdr=-1,dateIdx=[],i,x;
+  for(i=0;i<R.length;i++){
+    var r=R[i];
+    if(!r){continue;}
+    var ds=[];
+    for(x=0;x<r.length;x++){if(isDateLike(r[x])){ds.push(x);}}
+    if(ds.length<28){continue;}
+    var hasPlan=false;
+    for(x=0;x<r.length;x++){if(s(r[x]).trim()==='План'){hasPlan=true;break;}}
+    if(hasPlan){hdr=i;dateIdx=ds;break;}
+  }
+  if(hdr<0){return null;}
+  var dates=[];
+  for(i=0;i<dateIdx.length;i++){dates.push(dlab(R[hdr][dateIdx[i]]));}
+  var kind='to';
+  for(i=hdr+1;i<R.length&&i<hdr+4000;i++){
+    var rr=R[i];
+    if(rr&&/чек/i.test(s(rr[3]))){kind='chk';break;}
+  }
+  var stores={};
+  for(i=hdr+1;i<R.length;i++){
+    var rw=R[i];
+    if(!rw){continue;}
+    var nm=s(rw[0]).trim();
+    var mk=s(rw[3]).trim().toLowerCase();
+    if(!nm||!mk||/итого/i.test(nm)){continue;}
+    var key=null;
+    if(mk.indexOf('коэфф')>=0){key='coef';}
+    else if(mk.indexOf('корр')>=0){key='corr';}
+    else if(mk.indexOf('план')>=0){key='plan';}
+    else if(mk.indexOf('факт')>=0){key='fact';}
+    else if(mk.indexOf('прогноз')>=0){key='prog';}
+    else if(mk.indexOf('выполн')>=0){key='ful';}
+    if(!key){continue;}
+    if(!stores[nm]){stores[nm]={dates:dates};}
+    var daily=[];
+    for(x=0;x<dateIdx.length;x++){daily.push(num(rw[dateIdx[x]]));}
+    stores[nm][key]={m:num(rw[4]),d:daily};
+  }
+  return {kind:kind,dates:dates,stores:stores};
+}
+function parseTN(R){
+  var hdr=-1,i;
+  for(i=0;i<R.length;i++){
+    var r=R[i];
+    if(!r){continue;}
+    if(rowHasCell(r,'ГруппаНоменклатуры1')){hdr=i;break;}
+  }
+  if(hdr<0){return;}
+  for(i=hdr+1;i<R.length;i++){
+    var rr=R[i];
+    if(!rr){continue;}
+    var nm=s(rr[0]).trim();
+    var grp=s(rr[1]).trim();
+    if(!nm||!grp){continue;}
+    if(/итого/i.test(nm)){continue;}
+    var key=norm(nm);
+    if(!F1.tn[key]){F1.tn[key]=[];}
+    F1.tn[key].push({
+      g:grp.replace(/\s*\[.*\]/,''),
+      ss:num(rr[2]),rev:num(rr[3]),vp:num(rr[4]),mark:num(rr[5]),qty:num(rr[6])
+    });
+  }
+}
+function parseNetDaily(R){
+  var hdr=-1,i,x;
+  for(i=0;i<R.length;i++){
+    var r=R[i];
+    if(!r){continue;}
+    var a=false,b2=false;
+    for(x=0;x<r.length;x++){
+      var t=s(r[x]).trim();
+      if(t==='День'){a=true;}
+      if(t.indexOf('ТО-план')>=0){b2=true;}
+    }
+    if(a&&b2){hdr=i;break;}
+  }
+  if(hdr<0){return null;}
+  var out=[];
+  for(i=hdr+1;i<R.length&&out.length<31;i++){
+    var rr=R[i];
+    if(!rr){continue;}
+    var d=num(rr[0]);
+    if(d==null||d<1||d>31){continue;}
+    if(!isDateLike(rr[2])){continue;}
+    out.push({d:dlab(rr[2]),plan:num(rr[3]),fact:num(rr[4]),vp:num(rr[16])});
+  }
+  return out.length?out:null;
+}
+function parseFile1(wb){
+  var i;
+  for(i=0;i<wb.SheetNames.length;i++){
+    var sn=wb.SheetNames[i];
+    try{
+      var R=rowsOf(wb.Sheets[sn]);
+      if(/по тн|тноменклатур/i.test(sn)){parseTN(R);continue;}
+      if(/сеть гм|партнер/i.test(sn)){
+        var nd=parseNetDaily(R);
+        if(nd&&(!F1.net||nd.length>F1.net.length)){F1.net=nd;}
+        continue;
+      }
+      var w=parseWide(R);
+      if(w){
+        var target=(w.kind==='to')?F1.dailyTO:F1.dailyChk;
+        var ks=Object.keys(w.stores),j;
+        for(j=0;j<ks.length;j++){target[norm(ks[j])]=w.stores[ks[j]];}
+        continue;
+      }
+      parseRatingRows(R);
+    }catch(e){
+      if(window.console){window.console.warn('skip sheet',sn,e);}
+    }
+  }
+  F1.loaded=true;
+}
+
+function aggregate(L){
+  if(!L||!L.length){return null;}
+  var n=L.length,q;
+  function S(k){
+    var a=0,i;
+    for(i=0;i<L.length;i++){
+      var v=L[i][k];
+      if(typeof v==='number'&&isFinite(v)){a+=v;}
+    }
+    return a;
+  }
+  function avg(k){
+    var vs=[],i;
+    for(i=0;i<L.length;i++){
+      var v=L[i][k];
+      if(typeof v==='number'&&isFinite(v)){vs.push(v);}
+    }
+    if(!vs.length){return null;}
+    var a=0;
+    for(i=0;i<vs.length;i++){a+=vs[i];}
+    return a/vs.length;
+  }
+  var to=S('to'),to25=S('to25'),vp=S('vp'),vp25=S('vp25'),ss=S('ss'),ss25=S('ss25');
+  var qty=S('qty'),qty25=S('qty25'),ch=S('checks'),ch25=S('checks25');
+  var pTO=S('planTO'),pVP=S('planVP'),pCH=S('planChecks');
+  var aT=S('areaTotal'),aTr=S('areaTrade'),aTr25=S('areaTrade25');
+  var stock=S('stock'),sku=S('sku');
+  var days=avg('days')||30;
+  var A={n:n};
+  A.planTO=pTO/n;A.to=to/n;A.to25=to25/n;A.vp=vp/n;A.vp25=vp25/n;A.ss=ss/n;A.ss25=ss25/n;
+  A.qty=qty/n;A.qty25=qty25/n;A.checks=ch/n;A.checks25=ch25/n;A.planVP=pVP/n;A.planChecks=pCH/n;
+  A.areaTotal=aT/n;A.areaTrade=aTr/n;A.areaTrade25=aTr25/n;A.stock=stock/n;A.sku=sku/n;A.days=days;
+  A.fulTO=pTO?to/pTO*100:null;
+  A.fulVP=pVP?vp/pVP*100:null;
+  A.fulChecks=pCH?ch/pCH*100:null;
+  A.growthTO=to25?(to/to25-1)*100:null;
+  A.growthVP=vp25?(vp/vp25-1)*100:null;
+  A.growthSS=ss25?(ss/ss25-1)*100:null;
+  A.growthQty=qty25?(qty/qty25-1)*100:null;
+  A.growthChecks=ch25?(ch/ch25-1)*100:null;
+  A.shareVP=to?vp/to*100:null;
+  A.markup=ss?vp/ss*100:null;
+  A.avgCheck=ch?to*1000/ch:null;
+  A.avgCheck25=ch25?to25*1000/ch25:null;
+  A.growthAvgCheck=(A.avgCheck&&A.avgCheck25)?(A.avgCheck/A.avgCheck25-1)*100:null;
+  A.avgPrice=qty?to*1000/qty:null;
+  A.avgPrice25=qty25?to25*1000/qty25:null;
+  A.growthAvgPrice=(A.avgPrice&&A.avgPrice25)?(A.avgPrice/A.avgPrice25-1)*100:null;
+  A.vpPerCheck=ch?vp*1000/ch:null;
+  A.vpPerCheck25=ch25?vp25*1000/ch25:null;
+  A.growthVPCheck=(A.vpPerCheck&&A.vpPerCheck25)?(A.vpPerCheck/A.vpPerCheck25-1)*100:null;
+  A.qtyPerCheck=ch?qty/ch:null;
+  A.qtyPerCheck25=ch25?qty25/ch25:null;
+  A.growthQtyCheck=(A.qtyPerCheck&&A.qtyPerCheck25)?(A.qtyPerCheck/A.qtyPerCheck25-1)*100:null;
+  A.toPerM2=aTr?to*1000/aTr/days:null;
+  A.toPerM225=aTr25?to25*1000/aTr25/days:null;
+  A.growthTOM2=(A.toPerM2&&A.toPerM225)?(A.toPerM2/A.toPerM225-1)*100:null;
+  A.vpPerM2=aTr?vp*1000/aTr/days:null;
+  A.vpPerM225=aTr25?vp25*1000/aTr25/days:null;
+  A.growthVPM2=(A.vpPerM2&&A.vpPerM225)?(A.vpPerM2/A.vpPerM225-1)*100:null;
+  A.skuPerM2=aTr?sku/aTr:null;
+  A.fillTrade=aTr?stock/aTr:null;
+  A.fillTotal=aT?stock/aT:null;
+  A.turnDays=(ss>0&&days>0)?stock/(ss/days):null;
+  A.planAvgCheck=avg('planAvgCheck');
+  A.fulAvgCheck=avg('fulAvgCheck');
+  A.progTO=avg('progTO');
+  A.progFul=avg('progFul');
+  A.progVP=avg('progVP');
+  A.progFulVP=avg('progFulVP');
+  A.growthMoM=avg('growthMoM');
+  A.lflMoM=avg('lflMoM');
+  return A;
+}
+function similar(st){
+  if(!st||!st.areaTrade){return [];}
+  var i,cand=[],p=[];
+  for(i=0;i<ST.stores.length;i++){
+    var x=ST.stores[i];
+    if(x.name!==st.name&&x.lfl2===st.lfl2&&x.areaTrade){cand.push(x);}
+  }
+  for(i=0;i<cand.length;i++){
+    if(Math.abs(cand[i].areaTrade-st.areaTrade)/st.areaTrade<=0.3){p.push(cand[i]);}
+  }
+  if(p.length<3){
+    p=[];
+    for(i=0;i<cand.length;i++){
+      if(Math.abs(cand[i].areaTrade-st.areaTrade)/st.areaTrade<=0.5){p.push(cand[i]);}
+    }
+  }
+  if(p.length<3){p=cand;}
+  return p;
+}
+function levels(){
+  var all=ST.stores;
+  var st=selS();
+  function flt(f){
+    var a=[],q;
+    for(q=0;q<all.length;q++){if(f(all[q])){a.push(all[q]);}}
+    return a;
+  }
+  var out={net:all};
+  out.fo=st?flt(function(x){return x.fo&&x.fo===st.fo;}):[];
+  out.reg=st?flt(function(x){return x.region&&x.region===st.region;}):[];
+  out.lfl=st?flt(function(x){return x.lfl2===st.lfl2;}):[];
+  out.sim=st?similar(st):[];
+  out.custom=[];
+  var keys=Object.keys(ST.custom),i;
+  for(i=0;i<keys.length;i++){
+    if(ST.custom[keys[i]]&&ST.byNorm[keys[i]]){out.custom.push(ST.byNorm[keys[i]]);}
+  }
+  return out;
+}
+function activeList(){return levels()[ST.mode]||ST.stores;}
+function customCount(){return cnt(ST.custom);}
+function benchLabel(){
+  var st=selS();
+  var n=activeList().length;
+  if(!st){return '';}
+  if(ST.mode==='fo'){return 'ФО «'+(st.fo||'—')+'» ('+n+')';}
+  if(ST.mode==='reg'){return 'регион «'+(st.region||'—')+'» ('+n+')';}
+  if(ST.mode==='lfl'){return (st.lfl2||'LFL')+' ('+n+')';}
+  if(ST.mode==='sim'){return 'похожие ('+n+')';}
+  if(ST.mode==='custom'){return 'выборка ('+n+')';}
+  return 'вся сеть ('+n+')';
+}
+function rankOf(key,h){
+  var st=selS();
+  if(!st){return null;}
+  var my=st[key];
+  if(my==null||!isFinite(my)){return null;}
+  var better=0,i;
+  for(i=0;i<ST.stores.length;i++){
+    var v=ST.stores[i][key];
+    if(v==null||!isFinite(v)){continue;}
+    if(h>0?v>my:v<my){better++;}
+  }
+  return {p:better+1,t:ST.stores.length};
+}
+function chip(my,bv,h){
+  if(my==null||bv==null||!isFinite(my)||!isFinite(bv)||bv===0){return '<span class="pill n">нет базы</span>';}
+  var d=(my-bv)/Math.abs(bv)*100;
+  var ad=Math.abs(d);
+  var sgn=d>=0?'+':'−';
+  if(h===0){return '<span class="pill n">'+sgn+fmt(ad,1)+'%</span>';}
+  if(ad<1){return '<span class="pill n">≈ '+fmt(ad,1)+'%</span>';}
+  var good=h>0?d>0:d<0;
+  return '<span class="pill '+(good?'g':'r')+'">'+(good?'▲':'▼')+' '+sgn+fmt(ad,1)+'%</span>';
+}
+function sgnTxt(my,bv){
+  if(my==null||!isFinite(my)){return '<span class="fnt">—</span>';}
+  var cls='mut';
+  if(bv!=null&&isFinite(bv)){cls=my>=bv?'up':'dn';}
+  return '<span class="'+cls+'">'+(my>=0?'+':'')+fmt(my,1)+'%</span>';
+}
+function sgnPct(v){
+  if(v==null){return '—';}
+  return (v>=0?'+':'')+fmt(v,1)+'%';
+}
+function pp(v){return v==null?null:v/100;}
+function mergeRating(){
+  for(var i=0;i<ST.stores.length;i++){
+    var st=ST.stores[i];
+    var r=F1.rating[norm(st.name)];
+    if(r){
+      if(r.progTO!=null){st.progTO=r.progTO;}
+      if(r.progFul!=null){st.progFul=r.progFul;}
+      if(r.growthMoM!=null){st.growthMoM=r.growthMoM;}
+      if(r.lflMoM!=null){st.lflMoM=r.lflMoM;}
+      if(r.progVP!=null){st.progVP=r.progVP;}
+      if(r.progFulVP!=null){st.progFulVP=r.progFulVP;}
+    }
+    st.turnDays=turnOf(st);
+  }
+}
+function buildTNIndex(){
+  TNIDX.groups={};
+  TNIDX.totalRev=0;
+  TNIDX.regionTotals={};
+  var keys=Object.keys(F1.tn),i,j;
+  for(i=0;i<keys.length;i++){
+    var storeKey=keys[i];
+    var st=ST.byNorm[storeKey];
+    var region=st?st.region:'';
+    var arr=F1.tn[storeKey];
+    for(j=0;j<arr.length;j++){
+      var x=arr[j];
+      var rev=x.rev||0;
+      TNIDX.totalRev+=rev;
+      if(region){TNIDX.regionTotals[region]=(TNIDX.regionTotals[region]||0)+rev;}
+      var G=TNIDX.groups[x.g];
+      if(!G){G={rev:0,vp:0,qty:0,stores:{}};TNIDX.groups[x.g]=G;}
+      G.rev+=rev;
+      G.vp+=(x.vp||0);
+      G.qty+=(x.qty||0);
+      var prev=G.stores[storeKey]||{rev:0,vp:0,qty:0,mark:x.mark,region:region};
+      prev.rev+=rev;
+      prev.vp+=(x.vp||0);
+      prev.qty+=(x.qty||0);
+      G.stores[storeKey]=prev;
+    }
+  }
+}
+function setChip(which,ok,txt){
+  var c=$('ch'+which);
+  if(!c){return;}
+  c.className='fchip'+(ok?' ok':' err');
+  var t=$('ch'+which+'t');
+  if(t){t.textContent=txt;}
+}
+function setDrop(which,cls,txt){
+  var d=$(which===1?'d1':'d2');
+  if(!d){return;}
+  d.classList.remove('done','broken');
+  if(cls){d.classList.add(cls);}
+  var st=$(which===1?'dst1':'dst2');
+  if(st){st.textContent=txt;}
+}
+window.vIngest=function(w,wb,fname){
+  var i;
+  if(w===2){
+    var stores=parseStatsBlocks(wb);
+    if(!stores.length){
+      setChip(2,false,'Статистика: магазины не найдены');
+      setDrop(2,'broken','✗ Магазины не распознаны — проверьте файл');
+      stat('В файле 2 не найдены магазины',true);
+      return;
+    }
+    ST.stores=stores;
+    ST.byNorm={};
+    for(i=0;i<stores.length;i++){ST.byNorm[norm(stores[i].name)]=stores[i];}
+    var top=stores[0];
+    for(i=1;i<stores.length;i++){
+      if((stores[i].to||0)>(top.to||0)){top=stores[i];}
+    }
+    ST.sel=norm(top.name);
+    mergeRating();
+    if(F1.loaded){buildTNIndex();}
+    setChip(2,true,'Статистика: '+stores.length+' магазинов');
+    setDrop(2,'done','✓ Магазинов разобрано: '+stores.length);
+    $('hero').classList.add('hidden');
+    $('app').classList.remove('hidden');
+    refresh();
+    stat('Файл 2 обработан: '+stores.length+' магазинов'+(F1.loaded?' · файл 1 подключён':''));
+  }else{
+    parseFile1(wb);
+    mergeRating();
+    if(ST.stores.length){buildTNIndex();refresh();}
+    setChip(1,true,'План-факт: ТО у '+cnt(F1.dailyTO)+', чеки у '+cnt(F1.dailyChk)+', ТН у '+cnt(F1.tn));
+    setDrop(1,'done','✓ Дневная динамика: ТО '+cnt(F1.dailyTO)+' маг., чеки '+cnt(F1.dailyChk)+' маг. · ТН у '+cnt(F1.tn)+' маг.');
+    stat('Файл 1 обработан: дневная динамика, прогнозы и ассортимент подключены');
+  }
+};
+
+function cbox(id,h){
+  if(!HAS_CHART){return '<div class="chartbox '+(h||'')+'"><div class="nodata">Chart.js не загрузился — проверьте интернет и обновите страницу</div></div>';}
+  return '<div class="chartbox '+(h||'')+'"><canvas id="'+id+'"></canvas></div>';
+}
+function dynItem(label,my,net,reg){
+  return '<div class="dyni"><div class="dyni-l">'+label+'</div>'
+    +'<div class="dyni-v mono">'+sgnTxt(my,null)+'</div>'
+    +'<div class="dyni-c"><span>сеть '+sgnTxt(net,my)+'</span><span>регион '+sgnTxt(reg,my)+'</span></div></div>';
+}
+function posStrip(keys){
+  var st=selS();
+  if(!st){return '';}
+  var L=levels();
+  var N=aggregate(L.net);
+  var R=aggregate(L.reg);
+  var h='<div class="posgrid">',i;
+  for(i=0;i<keys.length;i++){
+    var k=keys[i][0],label=keys[i][1];
+    var my=st[k];
+    if(k==='turnDays'&&my==null){my=turnOf(st);}
+    var rk=rankOf(k,M[k].h);
+    h+='<div class="posc" data-drill="'+k+'">'
+      +'<div class="posc-t">'+label+'</div>'
+      +'<div class="posc-v mono">'+vfmt(k,my)+(rk?' <span class="posc-r">#'+rk.p+'<small>/'+rk.t+'</small></span>':'')+'</div>'
+      +'<div class="posc-c"><span>сеть '+chip(my,N?N[k]:null,M[k].h)+'</span><span>регион '+chip(my,R?R[k]:null,M[k].h)+'</span></div>'
+      +'</div>';
+  }
+  h+='</div>';
+  h+='<div class="dynstrip">'
+    +dynItem('Прирост ТО к 2025',st.growthTO,N?N.growthTO:null,R?R.growthTO:null)
+    +dynItem('Прирост МТМ (к пред. месяцу)',st.growthMoM,N?N.growthMoM:null,R?R.growthMoM:null)
+    +dynItem('LFL прирост МТМ',st.lflMoM,N?N.lflMoM:null,R?R.lflMoM:null)
+    +'</div>';
+  return h;
+}
+function fulColor(v){
+  if(v==null){return '#d0d5dd';}
+  if(v>=100){return 'var(--g2)';}
+  if(v>=95){return 'var(--w2)';}
+  return 'var(--r2)';
+}
+function kpiCard(label,key,value,subs,barVal){
+  var bar='';
+  if(barVal!=null){
+    var w=Math.min(100,Math.max(0,barVal.v));
+    bar='<div class="bar"><i style="width:'+w+'%;background:'+barVal.c+'"></i></div>';
+  }
+  return '<div class="kpi" data-drill="'+key+'"><div class="l">'+label+'</div><div class="v mono">'+value+'</div><div class="s">'+subs.join(' ')+'</div>'+bar+'</div>';
+}
+function matrixHTML(spec){
+  var st=selS();
+  if(!st){return '';}
+  var L=levels();
+  var A={
+    net:aggregate(L.net),
+    fo:aggregate(L.fo),
+    reg:aggregate(L.reg),
+    lfl:aggregate(L.lfl),
+    sim:aggregate(L.sim),
+    custom:aggregate(L.custom)
+  };
+  var AB=aggregate(activeList());
+  var cols=[['net','Сеть'],['fo','Мой ФО'],['reg','Мой регион'],['lfl','Моя LFL'],['sim','Похожие']];
+  if(customCount()>0){cols.push(['custom','Выборка']);}
+  var h='<table><thead><tr><th>Метрика</th><th style="background:var(--acc-soft)">Мой магазин</th>',i,j;
+  for(i=0;i<cols.length;i++){
+    var cc=cols[i];
+    var sub=A[cc[0]]?'<br><span class="fnt" style="text-transform:none;letter-spacing:0">'+A[cc[0]].n+' маг.</span>':'';
+    h+='<th>'+cc[1]+sub+'</th>';
+  }
+  h+='</tr></thead><tbody>';
+  for(i=0;i<spec.length;i++){
+    var k=spec[i][0],label=spec[i][1];
+    var my=st[k];
+    if(k==='turnDays'&&my==null){my=turnOf(st);}
+    var cells='<td class="mycell"><div class="mono">'+vfmt(k,my)+'</div><div class="cd">'+chip(my,AB?AB[k]:null,M[k].h)+'</div></td>';
+    for(j=0;j<cols.length;j++){
+      var ck=cols[j][0];
+      var g=A[ck]?A[ck][k]:null;
+      cells+='<td><div class="cv mono">'+vfmt(k,g)+'</div><div class="cd">'+chip(my,g,M[k].h)+'</div></td>';
+    }
+    h+='<tr class="click" data-drill="'+k+'"><td class="mname">'+label+'<small>'+M[k].u+'</small></td>'+cells+'</tr>';
+  }
+  h+='</tbody></table>';
+  return '<div class="tblwrap">'+h+'</div>'
+    +'<div class="legend"><span><span class="pill g">▲</span> магазин лучше уровня</span>'
+    +'<span><span class="pill r">▼</span> магазин хуже уровня</span>'
+    +'<span class="mut">Объёмные показатели уровня — средний магазин группы; коэффициенты — взвешенно. Клик по строке — драйвер-анализ.</span></div>';
+}
+var DOMAINS=[
+  ['Выручка','#EFF4FF','#155EEF','to',[['to','ТО за месяц'],['fulTO','Выполнение плана'],['progFul','Прогноз выполнения'],['growthTO','Прирост к 2025']]],
+  ['Прибыль','#ECFDF3','#079455','vp',[['vp','Валовая прибыль'],['fulVP','Выполнение плана ВП'],['markup','Наценка'],['shareVP','Доля ВП в ТО'],['growthVP','Прирост ВП']]],
+  ['Трафик','#F4F3FF','#7A5AF8','checks',[['checks','Чеки за месяц'],['fulChecks','Выполнение плана чеков'],['growthChecks','Прирост чеков']]],
+  ['Чек и цена','#FFFAEB','#B54708','avgCheck',[['avgCheck','Средний чек'],['growthAvgCheck','Прирост чека'],['qtyPerCheck','Штук в чеке'],['avgPrice','Средняя цена товара']]],
+  ['Эффективность м²','#ECFDFF','#0E7490','toPerM2',[['toPerM2','ТО на м² в день'],['vpPerM2','ВП на м² в день'],['growthTOM2','Прирост ТО на м²']]],
+  ['Запасы и полка','#F2F4F7','#475467','stock',[['stock','Остатки по себестоимости'],['sku','Остаток SKU'],['skuPerM2','SKU на м²'],['fillTrade','Наполнение зала']]]
+];
+var SPEC_TP=[['to','ТО факт'],['planTO','План ТО'],['fulTO','Выполнение плана ТО'],['progTO','Прогноз ТО'],['progFul','Прогноз выполнения ТО'],
+ ['to25','ТО август 2025'],['growthTO','Прирост ТО к 2025'],['growthMoM','Прирост к пред. месяцу'],['lflMoM','LFL прирост МТМ'],
+ ['vp','ВП факт'],['planVP','План ВП'],['fulVP','Выполнение плана ВП'],['progVP','Прогноз ВП'],['progFulVP','Прогноз выполнения ВП'],
+ ['vp25','ВП август 2025'],['growthVP','Прирост ВП к 2025'],['shareVP','Доля ВП в ТО'],['markup','Наценка'],
+ ['ss','Себестоимость'],['ss25','Себестоимость 2025'],['growthSS','Прирост себестоимости']];
+var SPEC_TR=[['checks','Чеки факт'],['planChecks','План чеков'],['fulChecks','Выполнение плана чеков'],['checks25','Чеки 2025'],['growthChecks','Прирост чеков'],
+ ['avgCheck','Средний чек'],['planAvgCheck','План среднего чека'],['fulAvgCheck','Выполнение плана чека'],['avgCheck25','Средний чек 2025'],['growthAvgCheck','Прирост среднего чека'],
+ ['avgPrice','Средняя цена товара'],['avgPrice25','Средняя цена 2025'],['growthAvgPrice','Прирост цены'],
+ ['vpPerCheck','ВП на один чек'],['vpPerCheck25','ВП на чек 2025'],['growthVPCheck','Прирост ВП на чек'],
+ ['qty','Продано штук'],['qty25','Продано штук 2025'],['growthQty','Прирост штук'],
+ ['qtyPerCheck','Штук в чеке'],['qtyPerCheck25','Штук в чеке 2025'],['growthQtyCheck','Прирост наполнения чека']];
+var SPEC_M2=[['toPerM2','ТО на м² в день'],['toPerM225','ТО на м² 2025'],['growthTOM2','Прирост ТО на м²'],
+ ['vpPerM2','ВП на м² в день'],['vpPerM225','ВП на м² 2025'],['growthVPM2','Прирост ВП на м²'],
+ ['areaTrade','Торговая площадь'],['areaTrade25','Торговая площадь 2025'],['areaTotal','Общая площадь'],['days','Рабочих дней'],
+ ['stock','Остатки по себестоимости'],['turnDays','Оборачиваемость остатков'],['sku','Остаток SKU'],['skuPerM2','SKU на м²'],
+ ['fillTrade','Наполнение торг. зала'],['fillTotal','Наполнение общ. площади']];
+
+function renderOverview(){
+  var st=selS();
+  var AB=aggregate(activeList());
+  var netA=aggregate(ST.stores);
+  var dTO_=F1.dailyTO[norm(st.name)];
+  var h='<div class="pagehead"><h2>Обзор: как идёт магазин</h2><p>Все ключевые показатели · клик по карточке или строке — драйвер-анализ «за счёт чего»</p></div>';
+  h+=posStrip([['to','Товарооборот'],['vp','Валовая прибыль'],['markup','Наценка'],['checks','Чеки'],['avgCheck','Средний чек'],['toPerM2','ТО на м²']]);
+  var k='';
+  k+=kpiCard('Товарооборот','to',fmtM(st.to),[chip(st.to,AB?AB.to:null,1),'<span class="pill b">план '+fmt(st.planTO,0)+'</span>','к 2025 '+sgnTxt(st.growthTO,null)],{v:st.fulTO||0,c:fulColor(st.fulTO)});
+  k+=kpiCard('Валовая прибыль','vp',fmtM(st.vp),[chip(st.vp,AB?AB.vp:null,1),'доля ВП '+fmt(st.shareVP,1)+'%','к 2025 '+sgnTxt(st.growthVP,null)],{v:st.fulVP||0,c:fulColor(st.fulVP)});
+  k+=kpiCard('Наценка','markup',fmt(st.markup,1)+'%',[chip(st.markup,AB?AB.markup:null,1),'сеть '+fmt(netA?netA.markup:null,1)+'%'],null);
+  k+=kpiCard('Чеки','checks',fmt(st.checks),[chip(st.checks,AB?AB.checks:null,1),'план '+fmt(st.planChecks,0),'к 2025 '+sgnTxt(st.growthChecks,null)],{v:st.fulChecks||0,c:fulColor(st.fulChecks)});
+  k+=kpiCard('Средний чек','avgCheck',fmt(st.avgCheck)+' ₽',[chip(st.avgCheck,AB?AB.avgCheck:null,1),'план '+fmt(st.planAvgCheck)+' ₽'],null);
+  h+='<div class="kpis">'+k+'</div>';
+  h+='<div class="domains">';
+  var i,j;
+  for(i=0;i<DOMAINS.length;i++){
+    var D=DOMAINS[i];
+    var hasR=false,hasG=false;
+    for(j=0;j<D[4].length;j++){
+      var pk=D[4][j][0];
+      var my=st[pk],bv=AB?AB[pk]:null;
+      var tn='n';
+      if(my!=null&&bv!=null&&M[pk].h!==0){
+        var dd=(my-bv)/Math.abs(bv)*100;
+        tn=(M[pk].h>0?dd>=0:dd<=0)?'g':'r';
+      }
+      if(tn==='r'){hasR=true;}
+      if(tn==='g'){hasG=true;}
+    }
+    var dot=hasR?'r':(hasG?'g':'n');
+    h+='<div class="dom"><div class="dh"><div class="ic" style="background:'+D[1]+';color:'+D[2]+'">'+D[0].charAt(0)+'</div>'
+      +'<h4 data-drill="'+D[3]+'">'+D[0]+'</h4><span class="hint">клик — анализ</span><span class="sdot '+dot+'"></span></div>';
+    for(j=0;j<D[4].length;j++){
+      var pk2=D[4][j][0];
+      h+='<div class="mrow" data-drill="'+pk2+'"><span class="ml">'+D[4][j][1]+'</span><span class="mv mono">'+vfmt(pk2,st[pk2])+'</span>'+chip(st[pk2],AB?AB[pk2]:null,M[pk2].h)+'</div>';
+    }
+    h+='</div>';
+  }
+  h+='</div>';
+  h+='<div class="grid g32"><div class="card"><h3>📈 Товарооборот по дням: план / факт / прогноз</h3><div class="sub">'+(dTO_?'Ваш магазин; серым — факт сети (правая ось)':'Загрузите файл 1 — лист «ТО План-Факт»')+'</div>'+cbox('c_dyn','tall')+'</div>'
+    +'<div class="card"><h3>🎯 Индекс к уровню сравнения</h3><div class="sub">'+benchLabel()+' = 100%. Выше 100 — магазин сильнее уровня.</div>'+cbox('c_idx','tall')+'</div></div>';
+  h+='<div class="grid g2"><div class="card"><h3>📊 Динамика: я · регион · сеть</h3><div class="sub">Приросты, %</div>'+cbox('c_dyn2','low')+'</div>'
+    +'<div class="card"><h3>🏬 ТО и ВП: я против уровней</h3><div class="sub">Средний магазин уровня, тыс ₽</div>'+cbox('c_lvl','low')+'</div></div>';
+  return h;
+}
+function renderTP(){
+  var st=selS();
+  var d=F1.dailyTO[norm(st.name)];
+  var h='<div class="pagehead"><h2>Товарооборот и прибыль</h2><p>План / факт / прогноз, накопительный итог, полная матрица сравнений</p></div>';
+  h+=posStrip([['to','Товарооборот'],['fulTO','Выполнение плана'],['vp','Валовая прибыль'],['markup','Наценка'],['growthTO','Прирост к 2025']]);
+  h+='<div class="grid g2"><div class="card"><h3>📈 План / факт / прогноз по дням</h3><div class="sub">Товарооборот, тыс ₽</div>'
+    +(d?cbox('c_tp_dyn'):'<div class="nodata">Загрузите файл 1 — лист «ТО План-Факт»</div>')+'</div>'
+    +'<div class="card"><h3>📊 Накопительный итог</h3><div class="sub">ТО нарастающим итогом: план, факт, прогноз</div>'
+    +(d?cbox('c_tp_cum'):'<div class="nodata">Нет дневных данных</div>')+'</div></div>';
+  h+='<div class="grid g2"><div class="card"><h3>🏬 ТО: я против уровней</h3><div class="sub">Средний магазин уровня, тыс ₽</div>'+cbox('c_tp_b1','low')+'</div>'
+    +'<div class="card"><h3>💰 ВП: я против уровней</h3><div class="sub">Средний магазин уровня, тыс ₽</div>'+cbox('c_tp_b2','low')+'</div></div>';
+  h+='<div class="card"><h3>🧮 Все метрики товарооборота и прибыли</h3><div class="sub">Полное сравнение по всем уровням · клик по строке — драйвер-анализ</div>'+matrixHTML(SPEC_TP)+'</div>';
+  return h;
+}
+function renderTR(){
+  var st=selS();
+  var dc=F1.dailyChk[norm(st.name)];
+  var dt=F1.dailyTO[norm(st.name)];
+  var h='<div class="pagehead"><h2>Трафик и чек</h2><p>Чеки, средний чек, цена и наполнение чека — дневная динамика и сравнения</p></div>';
+  h+=posStrip([['checks','Чеки'],['avgCheck','Средний чек'],['qtyPerCheck','Штук в чеке'],['avgPrice','Средняя цена'],['vpPerCheck','ВП на чек']]);
+  h+='<div class="grid g2"><div class="card"><h3>🎟 Чеки по дням: план / факт / прогноз</h3><div class="sub">Количество чеков</div>'
+    +(dc?cbox('c_tr_dyn'):'<div class="nodata">Загрузите файл 1 — лист «Чеки План-Факт»</div>')+'</div>'
+    +'<div class="card"><h3>🧾 Комбо: оборот и средний чек</h3><div class="sub">Столбцы — дневной ТО (тыс ₽), линия — средний чек (₽)</div>'
+    +((dc&&dt)?cbox('c_tr_combo'):'<div class="nodata">Нужны оба дневных листа файла 1</div>')+'</div></div>';
+  h+='<div class="grid g2"><div class="card"><h3>🎟 Средний чек: я против уровней</h3><div class="sub">₽, взвешенно</div>'+cbox('c_tr_b1','low')+'</div>'
+    +'<div class="card"><h3>🧮 Чеки в день: я против уровней</h3><div class="sub">Средний магазин уровня</div>'+cbox('c_tr_b2','low')+'</div></div>';
+  h+='<div class="card"><h3>🧮 Все метрики трафика и чека</h3><div class="sub">Полное сравнение по всем уровням · клик по строке — драйвер-анализ</div>'+matrixHTML(SPEC_TR)+'</div>';
+  return h;
+}
+function renderM2(){
+  var h='<div class="pagehead"><h2>Эффективность и запасы</h2><p>Отдача с квадратного метра, остатки, оборачиваемость, наполнение полки</p></div>';
+  h+=posStrip([['toPerM2','ТО на м²'],['vpPerM2','ВП на м²'],['turnDays','Оборачиваемость'],['fillTrade','Наполнение зала'],['skuPerM2','SKU на м²']]);
+  h+='<div class="grid g32"><div class="card"><h3>🗺 Карта сети: эффективность × наценка</h3><div class="sub">Каждая точка — магазин; размер = товарооборот; оранжевая точка — ваш магазин</div>'+cbox('c_m2_sc','tall')+'</div>'
+    +'<div><div class="card" style="margin-bottom:16px"><h3>📐 ТО на м²: я против уровней</h3>'+cbox('c_m2_b1','low')+'</div>'
+    +'<div class="card"><h3>💠 ВП на м²: я против уровней</h3>'+cbox('c_m2_b2','low')+'</div></div></div>';
+  h+='<div class="card"><h3>🧮 Все метрики эффективности и запасов</h3><div class="sub">Полное сравнение по всем уровням · клик по строке — драйвер-анализ</div>'+matrixHTML(SPEC_M2)+'</div>';
+  return h;
+}
+function renderAS(){
+  var st=selS();
+  var my=F1.tn[norm(st.name)];
+  var h='<div class="pagehead"><h2>Ассортимент: товарные группы</h2><p>Широкое сравнение групп с сетью, регионом и каждым магазином сети</p></div>';
+  if(!F1.loaded||!my||!my.length){
+    return h+'<div class="insight bad" style="background:var(--w-bg);border-color:#FEDF89;color:var(--w)">Структура ассортимента появится после загрузки файла 1 (лист «Продажи по ТН»).</div>';
+  }
+  var myTotal=0,myVP=0,i;
+  for(i=0;i<my.length;i++){myTotal+=(my[i].rev||0);myVP+=(my[i].vp||0);}
+  if(!myTotal){myTotal=1;}
+  var netA=aggregate(ST.stores);
+  var myMark=(myTotal-myVP)>0?myVP/(myTotal-myVP)*100:null;
+  var groupCount=cnt(TNIDX.groups);
+  h+='<div class="kpis">'
+    +kpiCard('Выручка по ТН','to',fmtM(myTotal),['групп: '+my.length,'из '+groupCount+' в сети'],null)
+    +kpiCard('ВП по ТН','vp',fmtM(myVP),[chip(st.vp,netA?netA.vp:null,1)],null)
+    +kpiCard('Средняя наценка','markup',fmt(myMark,1)+'%',[chip(st.markup,netA?netA.markup:null,1)],null)
+    +'</div>';
+  h+='<div class="grid g3"><div class="card"><h3>🥧 Моя структура выручки</h3>'+cbox('c_as_dn','low')+'</div>'
+    +'<div class="card"><h3>🌐 Структура сети</h3>'+cbox('c_as_dn2','low')+'</div>'
+    +'<div class="card"><h3>📊 Доля группы: я · сеть · регион</h3><div class="sub">Топ-8 групп, % выручки</div>'+cbox('c_as_bar','low')+'</div></div>';
+  var sorted=my.slice().sort(function(a,b){return (b.rev||0)-(a.rev||0);});
+  var t='<table><thead><tr><th>Группа</th><th>Моя выручка</th><th>Моя доля</th><th>Доля сети</th><th>Доля региона</th>'
+    +'<th>Моя наценка</th><th>Наценка сети</th><th>Я / ср. по сети</th><th>Место</th><th>Лидер группы</th></tr></thead><tbody>';
+  for(i=0;i<sorted.length;i++){
+    var x=sorted[i];
+    var G=TNIDX.groups[x.g];
+    var myShare=(x.rev||0)/myTotal*100;
+    var netShare=(G&&TNIDX.totalRev)?G.rev/TNIDX.totalRev*100:null;
+    var regGroup=0,regTotal=TNIDX.regionTotals[st.region||'']||0,q;
+    if(G){
+      var sks=Object.keys(G.stores);
+      for(q=0;q<sks.length;q++){
+        var sreg=ST.byNorm[sks[q]];
+        if(sreg&&sreg.region===st.region){regGroup+=G.stores[sks[q]].rev;}
+      }
+    }
+    var regShare=(st.region&&regTotal)?regGroup/regTotal*100:null;
+    var netMark=(G&&(G.rev-G.vp)>0)?G.vp/(G.rev-G.vp)*100:null;
+    var avg=(G&&cnt(G.stores)>0)?G.rev/cnt(G.stores):null;
+    var mult=(avg&&x.rev!=null)?x.rev/avg:null;
+    var rank=null,leader='—';
+    if(G){
+      var arr=[];
+      var sks2=Object.keys(G.stores);
+      for(q=0;q<sks2.length;q++){arr.push({k:sks2[q],rev:G.stores[sks2[q]].rev});}
+      arr.sort(function(a,b){return b.rev-a.rev;});
+      for(q=0;q<arr.length;q++){if(arr[q].k===norm(st.name)){rank=q+1;break;}}
+      if(arr.length){
+        var lS=ST.byNorm[arr[0].k];
+        leader=(lS?lS.name:arr[0].k)+' · '+fmt(arr[0].rev,0);
+      }
+    }
+    var rankTxt=rank?'#'+rank+'<span class="fnt">/'+(G?cnt(G.stores):0)+'</span>':'—';
+    t+='<tr><td class="mname">'+esc(x.g)+'</td>'
+      +'<td class="mono">'+fmt(x.rev,0)+'</td>'
+      +'<td class="mono">'+fmt(myShare,1)+'%</td>'
+      +'<td class="mono">'+fmt(netShare,1)+'% '+chip(myShare,netShare,1)+'</td>'
+      +'<td class="mono">'+fmt(regShare,1)+'% '+chip(myShare,regShare,1)+'</td>'
+      +'<td class="mono">'+fmt(x.mark,1)+'%</td>'
+      +'<td class="mono">'+fmt(netMark,1)+'% '+chip(x.mark,netMark,1)+'</td>'
+      +'<td class="mono">'+(mult!=null?'×'+fmt(mult,2):'—')+' '+chip(x.rev,avg,1)+'</td>'
+      +'<td class="mono">'+rankTxt+'</td>'
+      +'<td class="mut" style="text-align:left;font-size:11.5px">'+esc(leader)+'</td></tr>';
+  }
+  t+='</tbody></table>';
+  h+='<div class="card"><h3>📦 Группы магазина на фоне сети и региона</h3><div class="sub">Доля = % в выручке; «Я / ср. по сети» = ваша выручка в группе к средней выручке магазина сети в этой группе</div><div class="tblwrap" style="max-height:560px">'+t+'</div></div>';
+  return h;
+}
+var RKCOLS=[['name','Магазин',0],['fo','ФО',0],['region','Регион',0],['lfl2','LFL',0],
+ ['to','ТО, тыс ₽',1],['growthTO','Прирост %',1],['fulTO','План %',1],['vp','ВП, тыс ₽',1],
+ ['markup','Наценка %',1],['avgCheck','Чек, ₽',1],['toPerM2','₽/м²·д',1],['checks','Чеки',1]];
+function renderRK(){
+  return '<div class="pagehead"><h2>Рейтинг магазинов сети</h2><p>Клик по заголовку — сортировка, клик по строке — открыть магазин</p></div>'
+    +'<div class="card"><input id="rkq" placeholder="Поиск…" style="font:inherit;font-weight:600;padding:9px 13px;border:1.5px solid var(--line);border-radius:10px;margin-bottom:12px;min-width:260px"/>'
+    +'<div class="tblwrap" style="max-height:620px"><table id="rktable"></table></div></div>';
+}
+function buildRKTable(){
+  var el=$('rktable');
+  if(!el){return;}
+  var qEl=$('rkq');
+  var q=norm(qEl?qEl.value:'');
+  var k=ST.sort.k,d=ST.sort.d;
+  var list=[],i;
+  for(i=0;i<ST.stores.length;i++){
+    var x=ST.stores[i];
+    if(!q||norm(x.name+' '+(x.region||'')+' '+(x.fo||'')).indexOf(q)>=0){list.push(x);}
+  }
+  list.sort(function(a,b){
+    if(k==='name'||k==='region'||k==='fo'||k==='lfl2'){return s(a[k]).localeCompare(s(b[k]),'ru')*d;}
+    var va=(a[k]==null?-Infinity:a[k]);
+    var vb=(b[k]==null?-Infinity:b[k]);
+    return (va-vb)*d;
+  });
+  var head='<thead><tr>';
+  for(i=0;i<RKCOLS.length;i++){
+    var ar=ST.sort.k===RKCOLS[i][0]?(ST.sort.d>0?' ↑':' ↓'):'';
+    head+='<th class="sortable" data-k="'+RKCOLS[i][0]+'" style="text-align:'+(RKCOLS[i][2]?'right':'left')+'">'+RKCOLS[i][1]+ar+'</th>';
+  }
+  head+='</tr></thead>';
+  var body='';
+  for(i=0;i<list.length;i++){
+    var y=list[i];
+    var grCls=y.growthTO>=0?'var(--g)':'var(--r)';
+    var grTxt=y.growthTO==null?'—':sgnPct(y.growthTO);
+    body+='<tr class="click '+(norm(y.name)===ST.sel?'me':'')+'" data-n="'+esc(y.name)+'">'
+      +'<td class="mname">'+esc(y.name)+'</td><td class="mut">'+esc(y.fo||'—')+'</td><td class="mut">'+esc(y.region||'—')+'</td><td>'+esc(y.lfl2||'—')+'</td>'
+      +'<td class="mono">'+fmt(y.to)+'</td>'
+      +'<td class="mono" style="color:'+grCls+'">'+grTxt+'</td>'
+      +'<td class="mono">'+fmt(y.fulTO,1)+'</td><td class="mono">'+fmt(y.vp)+'</td><td class="mono">'+fmt(y.markup,1)+'</td>'
+      +'<td class="mono">'+fmt(y.avgCheck)+'</td><td class="mono">'+fmt(y.toPerM2)+'</td><td class="mono">'+fmt(y.checks)+'</td></tr>';
+  }
+  el.innerHTML=head+'<tbody>'+body+'</tbody>';
+  var ths=el.querySelectorAll('th.sortable');
+  for(i=0;i<ths.length;i++){
+    ths[i].onclick=function(){
+      var kk=this.getAttribute('data-k');
+      if(ST.sort.k===kk){ST.sort={k:kk,d:-ST.sort.d};}
+      else{ST.sort={k:kk,d:(kk==='name'||kk==='region'||kk==='fo'||kk==='lfl2')?1:-1};}
+      buildRKTable();
+    };
+  }
+  var trs=el.querySelectorAll('tr.click');
+  for(i=0;i<trs.length;i++){
+    trs[i].onclick=function(){
+      ST.sel=norm(this.getAttribute('data-n'));
+      refresh();
+    };
+  }
+  if(qEl){qEl.oninput=buildRKTable;}
+}
+
+function mkChart(id,cfg){
+  if(!HAS_CHART){return null;}
+  var el=$(id);
+  if(!el){return null;}
+  if(CH[id]){try{CH[id].destroy();}catch(e){}}
+  try{CH[id]=new Chart(el,cfg);return CH[id];}
+  catch(err){if(window.console){window.console.warn('chart fail',id,err);}return null;}
+}
+function areaGrad(color){
+  return function(ctx){
+    var ch=ctx.chart;
+    var c=ch.ctx;
+    var ar=ch.chartArea;
+    if(!ar){return color+'22';}
+    var g=c.createLinearGradient(0,ar.top,0,ar.bottom);
+    g.addColorStop(0,color+'33');
+    g.addColorStop(1,color+'03');
+    return g;
+  };
+}
+function levelItems(metricKey){
+  var L=levels();
+  var st=selS();
+  var defs=[
+    ['Я',st,'#155EEF'],
+    ['Сеть',aggregate(L.net),'#94a3b8'],
+    ['ФО',aggregate(L.fo),'#667085'],
+    ['Регион',aggregate(L.reg),'#7A5AF8'],
+    ['LFL',aggregate(L.lfl),'#F79009'],
+    ['Похожие',aggregate(L.sim),'#12B76A']
+  ];
+  if(customCount()>0){defs.push(['Выборка',aggregate(L.custom),'#0e9f6e']);}
+  var out=[],i;
+  for(i=0;i<defs.length;i++){
+    out.push({l:defs[i][0],v:defs[i][1]?defs[i][1][metricKey]:null,c:defs[i][2]});
+  }
+  return out;
+}
+function levelBars(id,metricKey,unit){
+  var items=levelItems(metricKey);
+  var labels=[],data=[],colors=[],i;
+  for(i=0;i<items.length;i++){
+    labels.push(items[i].l);
+    data.push(items[i].v);
+    colors.push(items[i].v==null?'#eef1f5':items[i].c);
+  }
+  var cfg={
+    type:'bar',
+    data:{labels:labels,datasets:[{data:data,backgroundColor:colors,borderRadius:8,borderSkipped:false,barPercentage:0.62}]},
+    options:{
+      maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:function(c){return ' '+fmt(c.raw,1)+' '+unit;}}}},
+      scales:{
+        x:{grid:{display:false},ticks:{font:{weight:'700'}}},
+        y:{grid:{color:'rgba(16,24,40,.05)'},ticks:{callback:function(v){return fmt(v);}}}
+      }
+    }
+  };
+  mkChart(id,cfg);
+}
+function drawOverviewCharts(st,dk,AB){
+  var d=F1.dailyTO[dk];
+  if(d&&d.fact&&d.plan){
+    var ds=[
+      {label:'Факт',data:d.fact.d,borderColor:'#155EEF',backgroundColor:areaGrad('#155EEF'),fill:true,tension:0.35,pointRadius:0,borderWidth:2.5,yAxisID:'y'},
+      {label:'План',data:d.plan.d,borderColor:'#98a2b3',borderDash:[6,5],tension:0.3,pointRadius:0,borderWidth:1.6,yAxisID:'y',fill:false},
+      {label:'Прогноз',data:d.prog?d.prog.d:[],borderColor:'#12B76A',borderDash:[3,3],tension:0.3,pointRadius:0,borderWidth:2,yAxisID:'y',fill:false}
+    ];
+    if(F1.net){
+      ds.push({label:'Сеть: факт (правая ось)',data:F1.net.map(function(x){return x.fact;}),borderColor:'#d0d5dd',tension:0.35,pointRadius:0,borderWidth:1.5,yAxisID:'y2',fill:false});
+    }
+    mkChart('c_dyn',{
+      type:'line',
+      data:{labels:d.dates,datasets:ds},
+      options:{
+        maintainAspectRatio:false,
+        interaction:{mode:'index',intersect:false},
+        plugins:{legend:{position:'bottom',labels:{usePointStyle:true,boxWidth:8}},tooltip:{callbacks:{label:function(c){return ' '+c.dataset.label+': '+fmt(c.raw)+' тыс ₽';}}}},
+        scales:{
+          x:{grid:{display:false},ticks:{maxRotation:0,autoSkip:true,maxTicksLimit:12}},
+          y:{grid:{color:'rgba(16,24,40,.05)'},ticks:{callback:function(v){return fmt(v);}}},
+          y2:{display:!!F1.net,position:'right',grid:{drawOnChartArea:false},ticks:{callback:function(v){return fmt(v);}}}
+        }
+      }
+    });
+  }
+  var idxKeys=[['fulTO','Вып. плана ТО'],['fulVP','Вып. плана ВП'],['markup','Наценка'],['growthTO','Прирост ТО'],['avgCheck','Ср. чек'],['toPerM2','ТО/м²']];
+  var vals=[],ii;
+  for(ii=0;ii<idxKeys.length;ii++){
+    var myv=st[idxKeys[ii][0]];
+    var bv=AB?AB[idxKeys[ii][0]]:null;
+    vals.push((myv!=null&&bv)?myv/bv*100:null);
+  }
+  var idxColors=[];
+  for(ii=0;ii<vals.length;ii++){
+    idxColors.push(vals[ii]==null?'#eef1f5':(vals[ii]>=100?'#12B76A':'#F04438'));
+  }
+  mkChart('c_idx',{
+    type:'bar',
+    data:{labels:idxKeys.map(function(p){return p[1];}),datasets:[{data:vals,backgroundColor:idxColors,borderRadius:8,borderSkipped:false,barPercentage:0.65}]},
+    options:{
+      indexAxis:'y',
+      maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:function(c){return ' '+fmt(c.raw,1)+'% от уровня';}}}},
+      scales:{
+        x:{grid:{color:'rgba(16,24,40,.05)'},ticks:{callback:function(v){return v+'%';}},suggestedMax:130},
+        y:{grid:{display:false},ticks:{font:{weight:'700'}}}
+      }
+    }
+  });
+  var regA=aggregate(levels().reg);
+  var netA=aggregate(ST.stores);
+  mkChart('c_dyn2',{
+    type:'bar',
+    data:{labels:['Прирост к 2025','МТМ','LFL МТМ'],datasets:[
+      {label:'Я',data:[st.growthTO,st.growthMoM,st.lflMoM],backgroundColor:'#155EEF',borderRadius:6,barPercentage:0.7},
+      {label:'Регион',data:[regA?regA.growthTO:null,regA?regA.growthMoM:null,regA?regA.lflMoM:null],backgroundColor:'#7A5AF8',borderRadius:6,barPercentage:0.7},
+      {label:'Сеть',data:[netA?netA.growthTO:null,netA?netA.growthMoM:null,netA?netA.lflMoM:null],backgroundColor:'#cbd5e1',borderRadius:6,barPercentage:0.7}
+    ]},
+    options:{
+      maintainAspectRatio:false,
+      plugins:{legend:{position:'bottom',labels:{usePointStyle:true,boxWidth:8}},tooltip:{callbacks:{label:function(c){return ' '+c.dataset.label+': '+(c.raw==null?'—':sgnPct(c.raw));}}}},
+      scales:{
+        x:{grid:{display:false}},
+        y:{grid:{color:'rgba(16,24,40,.05)'},ticks:{callback:function(v){return v+'%';}}}
+      }
+    }
+  });
+  mkChart('c_lvl',{
+    type:'bar',
+    data:{labels:['ТО, тыс ₽','ВП, тыс ₽'],datasets:[
+      {label:'Я',data:[st.to,st.vp],backgroundColor:'#155EEF',borderRadius:7,barPercentage:0.65},
+      {label:benchLabel(),data:[AB?AB.to:null,AB?AB.vp:null],backgroundColor:'#cbd5e1',borderRadius:7,barPercentage:0.65}
+    ]},
+    options:{
+      maintainAspectRatio:false,
+      plugins:{legend:{position:'bottom',labels:{usePointStyle:true,boxWidth:8}},tooltip:{callbacks:{label:function(c){return ' '+c.dataset.label+': '+fmt(c.raw)+' тыс ₽';}}}},
+      scales:{
+        x:{grid:{display:false}},
+        y:{grid:{color:'rgba(16,24,40,.05)'},ticks:{callback:function(v){return fmt(v);}}}
+      }
+    }
+  });
+}
+function cumA(arr){
+  var a=0,out2=[],k3;
+  for(k3=0;k3<arr.length;k3++){
+    if(arr[k3]==null){out2.push(null);}
+    else{a+=arr[k3];out2.push(a);}
+  }
+  return out2;
+}
+function drawTPCharts(st,dk){
+  var d=F1.dailyTO[dk];
+  if(d&&d.fact&&d.plan){
+    mkChart('c_tp_dyn',{
+      type:'line',
+      data:{labels:d.dates,datasets:[
+        {label:'Факт',data:d.fact.d,borderColor:'#155EEF',backgroundColor:areaGrad('#155EEF'),fill:true,tension:0.35,pointRadius:0,borderWidth:2.5},
+        {label:'План',data:d.plan.d,borderColor:'#98a2b3',borderDash:[6,5],tension:0.3,pointRadius:0,borderWidth:1.6,fill:false},
+        {label:'Прогноз',data:d.prog?d.prog.d:[],borderColor:'#12B76A',borderDash:[3,3],tension:0.3,pointRadius:0,borderWidth:2,fill:false}
+      ]},
+      options:{
+        maintainAspectRatio:false,
+        interaction:{mode:'index',intersect:false},
+        plugins:{legend:{position:'bottom',labels:{usePointStyle:true,boxWidth:8}},tooltip:{callbacks:{label:function(c){return ' '+c.dataset.label+': '+fmt(c.raw)+' тыс ₽';}}}},
+        scales:{
+          x:{grid:{display:false},ticks:{maxRotation:0,autoSkip:true,maxTicksLimit:12}},
+          y:{grid:{color:'rgba(16,24,40,.05)'},ticks:{callback:function(v){return fmt(v);}}}
+        }
+      }
+    });
+    mkChart('c_tp_cum',{
+      type:'line',
+      data:{labels:d.dates,datasets:[
+        {label:'Факт накопительно',data:cumA(d.fact.d),borderColor:'#155EEF',backgroundColor:areaGrad('#155EEF'),fill:true,tension:0.3,pointRadius:0,borderWidth:2.5},
+        {label:'План накопительно',data:cumA(d.plan.d),borderColor:'#98a2b3',borderDash:[6,5],tension:0.3,pointRadius:0,borderWidth:1.6,fill:false},
+        {label:'Прогноз накопительно',data:d.prog?cumA(d.prog.d):[],borderColor:'#12B76A',borderDash:[3,3],tension:0.3,pointRadius:0,borderWidth:2,fill:false}
+      ]},
+      options:{
+        maintainAspectRatio:false,
+        interaction:{mode:'index',intersect:false},
+        plugins:{legend:{position:'bottom',labels:{usePointStyle:true,boxWidth:8}},tooltip:{callbacks:{label:function(c){return ' '+c.dataset.label+': '+fmt(c.raw)+' тыс ₽';}}}},
+        scales:{
+          x:{grid:{display:false},ticks:{maxRotation:0,autoSkip:true,maxTicksLimit:12}},
+          y:{grid:{color:'rgba(16,24,40,.05)'},ticks:{callback:function(v){return fmt(v);}}}
+        }
+      }
+    });
+  }
+  levelBars('c_tp_b1','to','тыс ₽');
+  levelBars('c_tp_b2','vp','тыс ₽');
+}
+function drawTRCharts(st,dk){
+  var dc=F1.dailyChk[dk];
+  var dt=F1.dailyTO[dk];
+  if(dc&&dc.fact&&dc.plan){
+    mkChart('c_tr_dyn',{
+      type:'bar',
+      data:{labels:dc.dates,datasets:[
+        {label:'Факт',data:dc.fact.d,backgroundColor:'#7A5AF8',borderRadius:5,barPercentage:0.75},
+        {label:'План',data:dc.plan.d,backgroundColor:'#E9E5FE',borderRadius:5,barPercentage:0.75},
+        {label:'Прогноз',type:'line',data:dc.prog?dc.prog.d:[],borderColor:'#12B76A',borderDash:[3,3],tension:0.3,pointRadius:0,borderWidth:2,fill:false}
+      ]},
+      options:{
+        maintainAspectRatio:false,
+        interaction:{mode:'index',intersect:false},
+        plugins:{legend:{position:'bottom',labels:{usePointStyle:true,boxWidth:8}},tooltip:{callbacks:{label:function(c){return ' '+c.dataset.label+': '+fmt(c.raw);}}}},
+        scales:{
+          x:{grid:{display:false},ticks:{maxRotation:0,autoSkip:true,maxTicksLimit:12}},
+          y:{grid:{color:'rgba(16,24,40,.05)'},ticks:{callback:function(v){return fmt(v);}}}
+        }
+      }
+    });
+  }
+  if(dc&&dt&&dc.fact&&dt.fact){
+    var avgArr=[],i;
+    for(i=0;i<dt.fact.d.length;i++){
+      var v=dt.fact.d[i];
+      var c=dc.fact.d[i];
+      avgArr.push((v&&c)?v*1000/c:null);
+    }
+    mkChart('c_tr_combo',{
+      type:'bar',
+      data:{labels:dc.dates,datasets:[
+        {label:'ТО факт, тыс ₽',data:dt.fact.d,backgroundColor:'rgba(21,94,239,.55)',borderRadius:5,barPercentage:0.8,yAxisID:'y'},
+        {label:'Средний чек, ₽',type:'line',data:avgArr,borderColor:'#B54708',tension:0.35,pointRadius:0,borderWidth:2.2,yAxisID:'y2',fill:false}
+      ]},
+      options:{
+        maintainAspectRatio:false,
+        interaction:{mode:'index',intersect:false},
+        plugins:{legend:{position:'bottom',labels:{usePointStyle:true,boxWidth:8}}},
+        scales:{
+          x:{grid:{display:false},ticks:{maxRotation:0,autoSkip:true,maxTicksLimit:12}},
+          y:{grid:{color:'rgba(16,24,40,.05)'},ticks:{callback:function(v){return fmt(v);}}},
+          y2:{position:'right',grid:{drawOnChartArea:false},ticks:{callback:function(v){return fmt(v);}}}
+        }
+      }
+    });
+  }
+  levelBars('c_tr_b1','avgCheck','₽');
+  levelBars('c_tr_b2','checks','шт');
+}
+function drawM2Charts(st){
+  var pts={},k4;
+  for(k4=0;k4<ST.stores.length;k4++){
+    var x2=ST.stores[k4];
+    if(x2.toPerM2==null||x2.markup==null){continue;}
+    var grp=x2.lfl2||'—';
+    if(!pts[grp]){pts[grp]=[];}
+    pts[grp].push({x:x2.toPerM2,y:x2.markup,r:Math.max(3,Math.sqrt(x2.to||1)/26),nm:x2.name});
+  }
+  var pal={'LFL 1':'#155EEF','LFL 2':'#7A5AF8','Не LFL':'#B54708'};
+  var ds2=[];
+  var gk=Object.keys(pts);
+  for(k4=0;k4<gk.length;k4++){
+    var col=pal[gk[k4]]||'#667085';
+    ds2.push({label:gk[k4],data:pts[gk[k4]],backgroundColor:col+'66',borderColor:col,borderWidth:1.4});
+  }
+  if(st.toPerM2!=null&&st.markup!=null){
+    ds2.push({label:'Мой магазин',data:[{x:st.toPerM2,y:st.markup,r:9,nm:st.name}],backgroundColor:'rgba(247,144,9,.55)',borderColor:'#F79009',borderWidth:2.5});
+  }
+  mkChart('c_m2_sc',{
+    type:'bubble',
+    data:{datasets:ds2},
+    options:{
+      maintainAspectRatio:false,
+      plugins:{legend:{position:'bottom',labels:{usePointStyle:true,boxWidth:8}},tooltip:{callbacks:{label:function(c){return ' '+c.raw.nm+': '+fmt(c.raw.x)+' ₽/м², наценка '+fmt(c.raw.y,1)+'%';}}}},
+      scales:{
+        x:{title:{display:true,text:'ТО на м² в день, ₽'},grid:{color:'rgba(16,24,40,.05)'}},
+        y:{title:{display:true,text:'Наценка, %'},grid:{color:'rgba(16,24,40,.05)'}}
+      }
+    }
+  });
+  levelBars('c_m2_b1','toPerM2','₽/м²');
+  levelBars('c_m2_b2','vpPerM2','₽/м²');
+}
+function drawASCharts(st,dk){
+  var my=F1.tn[dk];
+  if(!my||!my.length){return;}
+  var palA=['#155EEF','#7A5AF8','#12B76A','#F79009','#F04438','#0891b2','#DB2777','#65a30d','#94a3b8'];
+  var myTotal=0,m2;
+  for(m2=0;m2<my.length;m2++){myTotal+=(my[m2].rev||0);}
+  if(!myTotal){myTotal=1;}
+  var sorted2=my.slice().sort(function(a,b){return (b.rev||0)-(a.rev||0);});
+  var top2=sorted2.slice(0,8);
+  var rest2=0;
+  for(m2=8;m2<sorted2.length;m2++){rest2+=(sorted2[m2].rev||0);}
+  var labels2=[],vals2=[];
+  for(m2=0;m2<top2.length;m2++){labels2.push(top2[m2].g);vals2.push(top2[m2].rev);}
+  if(rest2>0){labels2.push('Прочее');vals2.push(rest2);}
+  mkChart('c_as_dn',{
+    type:'doughnut',
+    data:{labels:labels2,datasets:[{data:vals2,backgroundColor:palA,borderWidth:2,borderColor:'#fff',hoverOffset:6}]},
+    options:{
+      maintainAspectRatio:false,
+      cutout:'58%',
+      plugins:{
+        legend:{position:'right',labels:{boxWidth:10,font:{size:10.5,weight:'600'}}},
+        tooltip:{callbacks:{label:function(c){return ' '+c.label+': '+fmt(c.raw)+' тыс ₽ ('+fmt(c.raw/myTotal*100,1)+'%)';}}}
+      }
+    }
+  });
+  var netArr=[];
+  var gn=Object.keys(TNIDX.groups);
+  for(m2=0;m2<gn.length;m2++){netArr.push({g:gn[m2],rev:TNIDX.groups[gn[m2]].rev});}
+  netArr.sort(function(a,b){return b.rev-a.rev;});
+  var ntop=netArr.slice(0,8);
+  var nrest=0;
+  for(m2=8;m2<netArr.length;m2++){nrest+=netArr[m2].rev;}
+  var nl=[],nv=[];
+  for(m2=0;m2<ntop.length;m2++){nl.push(ntop[m2].g);nv.push(ntop[m2].rev);}
+  if(nrest>0){nl.push('Прочее');nv.push(nrest);}
+  var tnr=TNIDX.totalRev||1;
+  mkChart('c_as_dn2',{
+    type:'doughnut',
+    data:{labels:nl,datasets:[{data:nv,backgroundColor:palA,borderWidth:2,borderColor:'#fff',hoverOffset:6}]},
+    options:{
+      maintainAspectRatio:false,
+      cutout:'58%',
+      plugins:{
+        legend:{position:'right',labels:{boxWidth:10,font:{size:10.5,weight:'600'}}},
+        tooltip:{callbacks:{label:function(c){return ' '+c.label+': '+fmt(c.raw)+' тыс ₽ ('+fmt(c.raw/tnr*100,1)+'%)';}}}
+      }
+    }
+  });
+  var mySh=[],netSh=[],regSh=[];
+  var regTotal2=TNIDX.regionTotals[st.region||'']||0;
+  for(m2=0;m2<top2.length;m2++){
+    var gx=top2[m2];
+    mySh.push((gx.rev||0)/myTotal*100);
+    var G2=TNIDX.groups[gx.g];
+    netSh.push(G2&&TNIDX.totalRev?G2.rev/TNIDX.totalRev*100:0);
+    var rg2=0;
+    if(G2){
+      var sks3=Object.keys(G2.stores);
+      for(var q3=0;q3<sks3.length;q3++){
+        var sreg2=ST.byNorm[sks3[q3]];
+        if(sreg2&&sreg2.region===st.region){rg2+=G2.stores[sks3[q3]].rev;}
+      }
+    }
+    regSh.push(regTotal2?rg2/regTotal2*100:0);
+  }
+  mkChart('c_as_bar',{
+    type:'bar',
+    data:{labels:top2.map(function(x3){return x3.g;}),datasets:[
+      {label:'Я',data:mySh,backgroundColor:'#155EEF',borderRadius:5,barPercentage:0.75},
+      {label:'Сеть',data:netSh,backgroundColor:'#cbd5e1',borderRadius:5,barPercentage:0.75},
+      {label:'Регион',data:regSh,backgroundColor:'#7A5AF8',borderRadius:5,barPercentage:0.75}
+    ]},
+    options:{
+      indexAxis:'y',
+      maintainAspectRatio:false,
+      plugins:{legend:{position:'bottom',labels:{usePointStyle:true,boxWidth:8}},tooltip:{callbacks:{label:function(c){return ' '+c.dataset.label+': '+fmt(c.raw,1)+'% выручки';}}}},
+      scales:{
+        x:{grid:{color:'rgba(16,24,40,.05)'},ticks:{callback:function(v){return v+'%';}}},
+        y:{grid:{display:false},ticks:{font:{size:10.5}}}
+      }
+    }
+  });
+}
+function drawCharts(){
+  if(!HAS_CHART){return;}
+  var st=selS();
+  if(!st){return;}
+  var dk=norm(st.name);
+  var AB=aggregate(activeList());
+  try{
+    if(ST.tab==='ov'){drawOverviewCharts(st,dk,AB);}
+    else if(ST.tab==='tp'){drawTPCharts(st,dk);}
+    else if(ST.tab==='tr'){drawTRCharts(st,dk);}
+    else if(ST.tab==='m2'){drawM2Charts(st);}
+    else if(ST.tab==='as'){drawASCharts(st,dk);}
+  }catch(e){
+    if(window.console){window.console.warn('drawCharts',e);}
+  }
+}
+
+function dHead(){return '<div class="drow head"><div>Метрика</div><div>Я</div><div>Сеть</div><div>Регион</div></div>';}
+function dRow(label,sub,my,nv,rv,d,unit,hh,indent){
+  var subTxt=sub?'<small>'+sub+'</small>':'';
+  return '<div class="drow'+(indent?' lvl2':'')+'"><div class="dl">'+label+subTxt+'</div>'
+    +'<div class="dv mono">'+fmt(my,d)+(unit||'')+'</div>'
+    +'<div class="dcell"><div class="cv mono">'+fmt(nv,d)+(unit||'')+'</div><div class="cd">'+chip(my,nv,hh)+'</div></div>'
+    +'<div class="dcell"><div class="cv mono">'+fmt(rv,d)+(unit||'')+'</div><div class="cd">'+chip(my,rv,hh)+'</div></div></div>';
+}
+function fbar(parts){
+  var tot=0,i;
+  for(i=0;i<parts.length;i++){tot+=Math.abs(parts[i].v);}
+  if(!tot){tot=1;}
+  var h='<div class="fbar">';
+  for(i=0;i<parts.length;i++){
+    h+='<div class="fseg '+parts[i].c+'" style="width:'+(Math.abs(parts[i].v)/tot*100)+'%" title="'+esc(parts[i].l)+'"></div>';
+  }
+  h+='</div><div class="fleg">';
+  for(i=0;i<parts.length;i++){
+    h+='<span><i class="fdot '+parts[i].c+'"></i>'+esc(parts[i].l)+': '+fmt(parts[i].v,0)+'%</span>';
+  }
+  h+='</div>';
+  return h;
+}
+function insightBox(txt,cls){return '<div class="insight '+(cls||'')+'">'+txt+'</div>';}
+function drillTo(st,N,R){
+  var gT=pp(st.growthTO),gC=pp(st.growthChecks),gA=pp(st.growthAvgCheck),gQ=pp(st.growthQtyCheck),gP=pp(st.growthAvgPrice);
+  var h='<div class="dsec">Драйвер-дерево: ТО = Чеки × Средний чек</div><div class="dgrid">'+dHead()
+    +dRow('ТО факт','тыс ₽',st.to,N?N.to:null,R?R.to:null,0,'',1,false)
+    +dRow('Чеки','трафик',st.checks,N?N.checks:null,R?R.checks:null,0,' шт',1,true)
+    +dRow('Средний чек','₽',st.avgCheck,N?N.avgCheck:null,R?R.avgCheck:null,0,' ₽',1,true)
+    +dRow('Штук в чеке','глубина корзины',st.qtyPerCheck,N?N.qtyPerCheck:null,R?R.qtyPerCheck:null,2,' шт',1,true)
+    +dRow('Средняя цена товара','₽ за штуку',st.avgPrice,N?N.avgPrice:null,R?R.avgPrice:null,0,' ₽',0,true)
+    +'</div>';
+  if(gT!=null&&gT!==0&&gC!=null&&gA!=null){
+    var parts=[];
+    parts.push({l:'Трафик (чеки '+sgnPct(st.growthChecks)+')',v:gC/gT*100,c:'a'});
+    parts.push({l:'Средний чек ('+sgnPct(st.growthAvgCheck)+')',v:gA/gT*100,c:'b'});
+    h+='<div class="dsec">Вклад факторов в прирост ТО к 2025 ('+fmt(st.growthTO,1)+'%)</div>'+fbar(parts);
+  }
+  if(gQ!=null&&gP!=null&&gA){
+    var parts2=[];
+    parts2.push({l:'Наполнение чека ('+sgnPct(st.growthQtyCheck)+')',v:gQ/gA*100,c:'c'});
+    parts2.push({l:'Цена товара ('+sgnPct(st.growthAvgPrice)+')',v:gP/gA*100,c:'d'});
+    h+='<div class="dsec">Разложение среднего чека: чек = Штуки × Цена</div>'+fbar(parts2);
+  }
+  var txt='';
+  if(gT!=null){
+    var driver='';
+    if(gC!=null&&gA!=null){driver=Math.abs(gC)>=Math.abs(gA)?'трафика (чеки)':'среднего чека';}
+    if(gT>=0){txt='ТО растёт на '+fmt(st.growthTO,1)+'% к 2025';}
+    else{txt='ТО падает на '+fmt(Math.abs(st.growthTO),1)+'% к 2025';}
+    if(driver){txt+=' — в основном за счёт '+driver+'.';}else{txt+='.';}
+    var netG=N?N.growthTO:null;
+    var regG=R?R.growthTO:null;
+    if(netG!=null){
+      txt+=' Для сравнения: сеть '+sgnPct(netG);
+      if(regG!=null){txt+=', ваш регион '+sgnPct(regG);}
+      txt+='.';
+    }
+    if(gC!=null&&gA!=null&&(gT<0||(netG!=null&&st.growthTO<netG))){
+      var weak=Math.abs(gC)<Math.abs(gA)?'трафик':'средний чек';
+      txt+=' Слабое звено: '+weak+' — копните его ниже.';
+    }
+  }
+  return h+insightBox('💡 '+txt,(st.growthTO||0)>=0?'good':'bad');
+}
+function drillVp(st,N,R){
+  var share25=(st.to25&&st.vp25!=null)?st.vp25/st.to25*100:null;
+  var gVP=pp(st.growthVP),gTO=pp(st.growthTO);
+  var cpp=(st.qty&&st.ss!=null)?st.ss*1000/st.qty:null;
+  var h='<div class="dsec">Драйвер-дерево: ВП = ТО × Доля ВП (или ТО − Себестоимость)</div><div class="dgrid">'+dHead()
+    +dRow('ВП факт','тыс ₽',st.vp,N?N.vp:null,R?R.vp:null,0,'',1,false)
+    +dRow('ТО','объём',st.to,N?N.to:null,R?R.to:null,0,' тыс ₽',1,true)
+    +dRow('Доля ВП в ТО','маржинальность',st.shareVP,N?N.shareVP:null,R?R.shareVP:null,1,'%',1,true)
+    +dRow('Себестоимость','ТО СС',st.ss,N?N.ss:null,R?R.ss:null,0,' тыс ₽',-1,true)
+    +dRow('Себестоимость на штуку','₽/шт',cpp,(N&&N.ss&&N.qty)?N.ss*1000/N.qty:null,(R&&R.ss&&R.qty)?R.ss*1000/R.qty:null,0,' ₽',-1,true)
+    +'</div>';
+  if(gVP!=null&&gVP!==0&&gTO!=null){
+    var parts=[];
+    parts.push({l:'Рост оборота ('+sgnPct(st.growthTO)+')',v:gTO/gVP*100,c:'a'});
+    parts.push({l:'Изменение доли ВП ('+(share25!=null?fmt(st.shareVP-share25,1):'0')+' п.п.)',v:(gVP-gTO)/gVP*100,c:'c'});
+    h+='<div class="dsec">Вклад факторов в прирост ВП к 2025 ('+fmt(st.growthVP,1)+'%)</div>'+fbar(parts);
+  }
+  var txt;
+  if(st.growthVP>=0){txt='ВП растёт на '+fmt(st.growthVP,1)+'% к 2025.';}
+  else{txt='ВП падает на '+fmt(Math.abs(st.growthVP),1)+'% к 2025.';}
+  if(st.growthVP!=null&&st.growthTO!=null){
+    if(Math.abs(st.growthVP)>Math.abs(st.growthTO)){
+      txt+=' Прибыль растёт быстрее оборота — доля ВП расширяется ('+fmt(st.shareVP,1)+'% против '+fmt(share25,1)+'% в 2025): работает наценка.';
+    }else{
+      txt+=' Оборот растёт быстрее прибыли — доля ВП сжимается: проверьте наценку и себестоимость.';
+    }
+  }
+  return h+insightBox('💡 '+txt,(st.growthVP||0)>=0?'good':'bad');
+}
+function drillMarkup(st,N,R){
+  var cpp=(st.qty&&st.ss!=null)?st.ss*1000/st.qty:null;
+  var cpp25=(st.qty25&&st.ss25!=null)?st.ss25*1000/st.qty25:null;
+  var gPrice=pp(st.growthAvgPrice);
+  var gSS=(cpp&&cpp25)?cpp/cpp25-1:null;
+  var nCpp=(N&&N.ss&&N.qty)?N.ss*1000/N.qty:null;
+  var rCpp=(R&&R.ss&&R.qty)?R.ss*1000/R.qty:null;
+  var h='<div class="dsec">Наценка = ВП / Себестоимость = (Цена − Себестоимость шт.) / Себестоимость шт.</div><div class="dgrid">'+dHead()
+    +dRow('Наценка','ВП/СС',st.markup,N?N.markup:null,R?R.markup:null,1,'%',1,false)
+    +dRow('Средняя цена за штуку','выручка/шт',st.avgPrice,N?N.avgPrice:null,R?R.avgPrice:null,0,' ₽',1,true)
+    +dRow('Себестоимость за штуку','СС/шт',cpp,nCpp,rCpp,0,' ₽',-1,true)
+    +dRow('Маржа на штуку','цена − сс/шт',(st.avgPrice!=null&&cpp!=null)?st.avgPrice-cpp:null,null,null,0,' ₽',1,true)
+    +'</div>';
+  if(gPrice!=null&&gSS!=null){
+    var parts=[];
+    parts.push({l:'Цена ('+sgnPct(st.growthAvgPrice)+')',v:gPrice*100,c:'a'});
+    parts.push({l:'Себестоимость/шт ('+sgnPct(gSS*100)+')',v:gSS*100,c:'d'});
+    h+='<div class="dsec">«Ножницы»: динамика цены против себестоимости к 2025</div>'+fbar(parts);
+  }
+  var txt='Наценка '+fmt(st.markup,1)+'%.';
+  if(N&&N.markup!=null){
+    if(st.markup>=N.markup){txt+=' Выше сети на '+fmt(st.markup-N.markup,1)+' п.п. — прибыль с рубля оборота выше средней.';}
+    else{txt+=' Ниже сети на '+fmt(N.markup-st.markup,1)+' п.п. — причина отставания по ВП при нормальном обороте.';}
+  }
+  if(gPrice!=null&&gSS!=null){
+    if(gPrice>gSS){txt+=' Цена растёт быстрее себестоимости — наценка расширяется.';}
+    else{txt+=' Себестоимость растёт быстрее цены — наценка под давлением, это «съедает» прибыль.';}
+  }
+  var cls=(N&&st.markup>=N.markup)?'good':'bad';
+  return h+insightBox('💡 '+txt,cls);
+}
+function drillAvgCheck(st,N,R){
+  var gA=pp(st.growthAvgCheck),gQ=pp(st.growthQtyCheck),gP=pp(st.growthAvgPrice);
+  var h='<div class="dsec">Средний чек = Штук в чеке × Средняя цена товара</div><div class="dgrid">'+dHead()
+    +dRow('Средний чек','₽',st.avgCheck,N?N.avgCheck:null,R?R.avgCheck:null,0,' ₽',1,false)
+    +dRow('Штук в чеке','глубина корзины',st.qtyPerCheck,N?N.qtyPerCheck:null,R?R.qtyPerCheck:null,2,' шт',1,true)
+    +dRow('Средняя цена товара','₽/шт',st.avgPrice,N?N.avgPrice:null,R?R.avgPrice:null,0,' ₽',0,true)
+    +'</div>';
+  if(gA!=null&&gA!==0&&gQ!=null&&gP!=null){
+    var parts=[];
+    parts.push({l:'Наполнение чека ('+sgnPct(st.growthQtyCheck)+')',v:gQ/gA*100,c:'c'});
+    parts.push({l:'Цена товара ('+sgnPct(st.growthAvgPrice)+')',v:gP/gA*100,c:'d'});
+    h+='<div class="dsec">Вклад факторов в прирост чека ('+fmt(st.growthAvgCheck,1)+'%)</div>'+fbar(parts);
+  }
+  var txt='';
+  if(gQ!=null&&gP!=null){
+    if(Math.abs(gQ)>=Math.abs(gP)){txt='Чек двигается в основном за счёт глубины корзины (штук в чеке '+sgnPct(st.growthQtyCheck)+').';}
+    else{txt='Чек двигается в основном за счёт цены товара ('+sgnPct(st.growthAvgPrice)+').';}
+    if(st.growthQtyCheck<0){txt+=' Наполнение чека падает — проверьте ассортимент, запасы и полку.';}
+  }
+  return h+(txt?insightBox('💡 '+txt):'');
+}
+function drillChecks(st,N,R){
+  var days=st.days||30;
+  var h='<div class="dsec">Трафик: чеки, план и сравнения</div><div class="dgrid">'+dHead()
+    +dRow('Чеки за месяц','шт',st.checks,N?N.checks:null,R?R.checks:null,0,' шт',1,false)
+    +dRow('Чеков в день','среднее',st.checks/days,(N&&N.checks)?N.checks/days:null,(R&&R.checks)?R.checks/days:null,0,'',1,true)
+    +dRow('Выполнение плана чеков','%',st.fulChecks,N?N.fulChecks:null,R?R.fulChecks:null,1,'%',1,true)
+    +dRow('Прирост чеков к 2025','%',st.growthChecks,N?N.growthChecks:null,R?R.growthChecks:null,1,'%',1,true)
+    +'</div>';
+  var txt;
+  if(st.growthChecks>=0){txt='Чеки растут на '+fmt(st.growthChecks,1)+'% к 2025.';}
+  else{txt='Чеки падают на '+fmt(Math.abs(st.growthChecks),1)+'% к 2025.';}
+  if(N&&N.growthChecks!=null){
+    if(st.growthChecks>=N.growthChecks){txt+=' Трафик растёт быстрее сети — магазин набирает покупателей.';}
+    else{txt+=' Трафик растёт медленнее сети ('+fmt(N.growthChecks,1)+'%) — узкое место в воронке привлечения.';}
+  }
+  return h+insightBox('💡 '+txt,(st.growthChecks||0)>=0?'good':'bad');
+}
+function drillM2(st,N,R){
+  var h='<div class="dsec">ТО/м² = ТО / (Торговая площадь × Дни)</div><div class="dgrid">'+dHead()
+    +dRow('ТО на м² в день','₽',st.toPerM2,N?N.toPerM2:null,R?R.toPerM2:null,0,' ₽',1,false)
+    +dRow('ВП на м² в день','₽',st.vpPerM2,N?N.vpPerM2:null,R?R.vpPerM2:null,0,' ₽',1,false)
+    +dRow('Торговая площадь','м²',st.areaTrade,N?N.areaTrade:null,R?R.areaTrade:null,0,' м²',0,true)
+    +dRow('ТО','тыс ₽',st.to,N?N.to:null,R?R.to:null,0,' тыс ₽',1,true)
+    +'</div>';
+  var txt='';
+  if(st.toPerM2!=null&&N&&N.toPerM2!=null){
+    if(st.toPerM2>=N.toPerM2){txt='Площадь работает эффективнее сети: '+fmt(st.toPerM2)+' ₽/м² против '+fmt(N.toPerM2)+' ₽/м².';}
+    else{txt='Площадь работает хуже сети: '+fmt(st.toPerM2)+' ₽/м² против '+fmt(N.toPerM2)+' ₽/м². Резерв — подтянуть оборот на ту же площадь.';}
+  }
+  return h+(txt?insightBox('💡 '+txt):'');
+}
+function drillStock(st,N,R){
+  var turn=turnOf(st);
+  var turnN=(N&&N.ss>0)?N.stock/(N.ss/N.days):null;
+  var turnR=(R&&R.ss>0)?R.stock/(R.ss/R.days):null;
+  var h='<div class="dsec">Запасы: остатки, оборачиваемость, полка</div><div class="dgrid">'+dHead()
+    +dRow('Остатки по себестоимости','тыс ₽',st.stock,N?N.stock:null,R?R.stock:null,0,' тыс ₽',0,false)
+    +dRow('Оборачиваемость','дни = остатки / (СС/день)',turn,turnN,turnR,0,' дн',-1,false)
+    +dRow('SKU в остатке','шт',st.sku,N?N.sku:null,R?R.sku:null,0,' шт',0,true)
+    +dRow('SKU на м²','плотность',st.skuPerM2,N?N.skuPerM2:null,R?R.skuPerM2:null,1,' шт',0,true)
+    +dRow('Наполнение торг. зала','тыс ₽/м²',st.fillTrade,N?N.fillTrade:null,R?R.fillTrade:null,1,'',0,true)
+    +'</div>';
+  var txt='';
+  if(turn!=null&&turnN!=null){
+    if(turn<=turnN){txt='Остатки оборачиваются за '+fmt(turn)+' дн — быстрее сети ('+fmt(turnN)+' дн): деньги не заморожены.';}
+    else{txt='Остатки оборачиваются '+fmt(turn)+' дн — медленнее сети ('+fmt(turnN)+' дн): лишние запасы замораживают деньги.';}
+  }
+  var cls=(turnN!=null&&turn<=turnN)?'good':'bad';
+  return h+(txt?insightBox('💡 '+txt,cls):'');
+}
+var DRILLS={to:drillTo,vp:drillVp,markup:drillMarkup,shareVP:drillMarkup,avgCheck:drillAvgCheck,checks:drillChecks,toPerM2:drillM2,vpPerM2:drillM2,stock:drillStock};
+function openDrill(key){
+  var st=selS();
+  if(!st||!M[key]){return;}
+  var L=levels();
+  var N=aggregate(L.net);
+  var R=aggregate(L.reg);
+  $('drillTitle').textContent=M[key].l+' — драйвер-анализ · '+st.name;
+  var body='';
+  var my=st[key];
+  if(key==='turnDays'&&my==null){my=turnOf(st);}
+  var planK=PLANMAP[key],fulK=FULMAP[key],y25K=Y25[key],gK=GROW[key];
+  var bits=[];
+  if(planK&&st[planK]!=null){bits.push('<span class="pill b">план '+vfmt(planK,st[planK])+'</span>');}
+  if(fulK&&st[fulK]!=null){bits.push('<span class="pill '+(st[fulK]>=100?'g':'r')+'">выполнение '+fmt(st[fulK],1)+'%</span>');}
+  if(y25K&&st[y25K]!=null){bits.push('<span class="pill n">2025: '+vfmt(y25K,st[y25K])+'</span>');}
+  if(gK&&st[gK]!=null){
+    var gcls;
+    if(M[gK].h>0){gcls=st[gK]>=0?'g':'r';}
+    else{gcls=st[gK]<=0?'g':'r';}
+    bits.push('<span class="pill '+gcls+'">к 2025 '+sgnPct(st[gK])+'</span>');
+  }
+  body+='<div class="dsum"><div><div class="l">'+M[key].l+' · '+M[key].u+'</div><div class="v mono">'+vfmt(key,my)+'</div></div><div class="s">'+bits.join(' ')+'</div></div>';
+  var lvls=[['Сеть',L.net],['Мой ФО',L.fo],['Мой регион',L.reg],['Моя LFL',L.lfl],['Похожие',L.sim]];
+  if(customCount()>0){lvls.push(['Произвольная выборка',L.custom]);}
+  body+='<div class="dsec">Сравнение с уровнями</div><div class="dgrid"><div class="drow head"><div>Уровень</div><div>Значение</div><div>Моё отклонение</div><div>Магазинов</div></div>';
+  for(var i=0;i<lvls.length;i++){
+    var A=aggregate(lvls[i][1]);
+    var v=A?A[key]:null;
+    if(key==='turnDays'&&v==null&&A&&A.ss>0){v=A.stock/(A.ss/A.days);}
+    body+='<div class="drow"><div class="dl">'+lvls[i][0]+'</div><div class="dv mono">'+vfmt(key,v)+'</div><div class="dcell">'+chip(my,v,M[key].h)+'</div><div class="dcell mono fnt">'+(A?A.n:'—')+'</div></div>';
+  }
+  body+='</div>';
+  var fn=DRILLS[key];
+  if(fn){body+=fn(st,N,R);}
+  else{body+='<div class="insight">💡 Для этого показателя драйвер-дерево не требуется: смотрите строки сравнения выше — они показывают, где магазин сильнее или слабее каждого уровня.</div>';}
+  $('drillBody').innerHTML=body;
+  $('drillM').classList.add('open');
+}
+function closeDrill(){$('drillM').classList.remove('open');}
+function openCustom(){
+  $('customM').classList.add('open');
+  renderMList();
+  $('msearch').value='';
+  $('msearch').focus();
+}
+function closeCustom(){$('customM').classList.remove('open');}
+function renderMList(){
+  var q=norm($('msearch').value),i;
+  var arr=[];
+  for(i=0;i<ST.stores.length&&arr.length<400;i++){
+    var x=ST.stores[i];
+    if(!q||norm(x.name+' '+(x.region||'')+' '+(x.fo||'')).indexOf(q)>=0){arr.push(x);}
+  }
+  var h='';
+  for(i=0;i<arr.length;i++){
+    var kk=norm(arr[i].name);
+    var checked=ST.custom[kk]?'checked':'';
+    h+='<label><input type="checkbox" data-n="'+esc(kk)+'" '+checked+'/><span>'+esc(arr[i].name)+'</span><small>'+esc(arr[i].region||'')+' · '+esc(arr[i].lfl2||'')+'</small></label>';
+  }
+  $('mlist').innerHTML=h||'<div class="mut" style="padding:10px">Ничего не найдено</div>';
+  var cbs=$('mlist').querySelectorAll('input');
+  for(i=0;i<cbs.length;i++){
+    cbs[i].onchange=function(){
+      var key=this.getAttribute('data-n');
+      if(this.checked){ST.custom[key]=true;}else{delete ST.custom[key];}
+      updMCnt();
+    };
+  }
+  updMCnt();
+}
+function updMCnt(){
+  $('mcnt').textContent='Выбрано магазинов: '+customCount();
+  $('customLbl').textContent=customCount()>0?('Выбрано: '+customCount()):'Собрать выборку';
+}
+var TABS={ov:'Обзор',tp:'Товарооборот и прибыль',tr:'Трафик и чек',m2:'Эффективность и запасы',as:'Ассортимент',rk:'Рейтинг'};
+function renderStoreBar(){
+  var q=norm($('storeQ').value||'');
+  var list=[],i;
+  for(i=0;i<ST.stores.length;i++){
+    var x=ST.stores[i];
+    if(!q||norm(x.name+' '+(x.region||'')+' '+(x.fo||'')).indexOf(q)>=0){list.push(x);}
+  }
+  list.sort(function(a,b){return (b.to||0)-(a.to||0);});
+  var h='';
+  for(i=0;i<list.length;i++){
+    var selAttr=norm(list[i].name)===ST.sel?' selected':'';
+    h+='<option value="'+esc(list[i].name)+'"'+selAttr+'>'+esc(list[i].name)+' · '+esc(list[i].region||'—')+' · '+fmtM(list[i].to)+'</option>';
+  }
+  $('storeSel').innerHTML=h;
+  var st=selS();
+  if(st){
+    var sim=similar(st);
+    var tg='<span class="tag v">'+esc(st.lfl2||'LFL —')+'</span>';
+    if(st.fo){tg+='<span class="tag">'+esc(st.fo)+'</span>';}
+    if(st.region){tg+='<span class="tag">'+esc(st.region)+'</span>';}
+    if(st.open){tg+='<span class="tag">открыт '+esc(st.open)+'</span>';}
+    tg+='<span class="tag">'+fmt(st.areaTrade)+' м²</span>';
+    tg+='<span class="tag b">похожих: '+sim.length+'</span>';
+    $('tags').innerHTML=tg;
+  }
+  updMCnt();
+}
+function renderTabs(){
+  var h='',k;
+  for(k in TABS){
+    if(!Object.prototype.hasOwnProperty.call(TABS,k)){continue;}
+    h+='<button class="tab '+(k===ST.tab?'on':'')+'" data-t="'+k+'">'+TABS[k]+'</button>';
+  }
+  $('tabs').innerHTML=h;
+  var bs=$('tabs').querySelectorAll('.tab'),i;
+  for(i=0;i<bs.length;i++){
+    bs[i].onclick=function(){
+      ST.tab=this.getAttribute('data-t');
+      renderTabs();
+      renderView();
+    };
+  }
+}
+function renderView(){
+  var v=$('view');
+  var html='';
+  try{
+    if(ST.tab==='ov'){html=renderOverview();}
+    else if(ST.tab==='tp'){html=renderTP();}
+    else if(ST.tab==='tr'){html=renderTR();}
+    else if(ST.tab==='m2'){html=renderM2();}
+    else if(ST.tab==='as'){html=renderAS();}
+    else if(ST.tab==='rk'){html=renderRK();}
+  }catch(e){
+    if(window.console){window.console.error(e);}
+    html='<div class="card">Ошибка отрисовки: '+esc(e.message)+'</div>';
+  }
+  v.innerHTML=html;
+  if(ST.tab==='rk'){buildRKTable();}
+  setTimeout(drawCharts,40);
+  setTimeout(drawCharts,300);
+}
+function refresh(){
+  try{
+    renderStoreBar();
+    renderTabs();
+    renderView();
+  }catch(err){
+    if(window.console){window.console.error(err);}
+    stat('Ошибка: '+err.message,true);
+  }
+}
+function initApp(){
+  if(HAS_CHART){
+    Chart.defaults.font.family="'Manrope Variable','Manrope',sans-serif";
+    Chart.defaults.color='#667085';
+    Chart.defaults.borderColor='rgba(16,24,40,.06)';
+    Chart.defaults.plugins.tooltip.backgroundColor='#101828';
+    Chart.defaults.plugins.tooltip.padding=10;
+    Chart.defaults.plugins.tooltip.cornerRadius=10;
+  }
+  $('storeQ').addEventListener('input',function(){renderStoreBar();});
+  $('storeSel').addEventListener('change',function(){
+    ST.sel=norm(this.value);
+    refresh();
+  });
+  $('mode').addEventListener('change',function(){
+    ST.mode=this.value;
+    if(ST.mode==='custom'&&customCount()===0){openCustom();return;}
+    refresh();
+  });
+  $('customBtn').addEventListener('click',openCustom);
+  $('mclose').addEventListener('click',closeCustom);
+  $('customM').addEventListener('click',function(e){if(e.target===this){closeCustom();}});
+  $('msearch').addEventListener('input',renderMList);
+  $('mclear').addEventListener('click',function(){ST.custom={};renderMList();refresh();});
+  $('mapply').addEventListener('click',function(){
+    if(customCount()>0){ST.mode='custom';$('mode').value='custom';}
+    closeCustom();
+    refresh();
+  });
+  $('drillClose').addEventListener('click',closeDrill);
+  $('drillM').addEventListener('click',function(e){if(e.target===this){closeDrill();}});
+  document.addEventListener('keydown',function(e){
+    if(e.key==='Escape'){closeDrill();closeCustom();}
+  });
+  document.addEventListener('click',function(e){
+    var t=e.target;
+    while(t&&t!==document){
+      if(t.getAttribute&&t.getAttribute('data-drill')){
+        openDrill(t.getAttribute('data-drill'));
+        return;
+      }
+      t=t.parentNode;
+    }
+  });
+  stat('Готов к загрузке файлов'+(HAS_CHART?'':' · Chart.js не загрузился — графики будут отключены'));
+}
+try{
+  initApp();
+}catch(err){
+  if(window.console){window.console.error(err);}
+  stat('Ошибка инициализации дашборда: '+(err&&err.message?err.message:err),true);
+}
+})();
+
+  function bindFilePicker(which) {
+    var input = root.getElementById(which === 1 ? 'f1' : 'f2');
+    if (input) input.addEventListener('change', function () { onFilePicked(which, input); });
+  }
+  root.querySelectorAll('[data-vision-file]').forEach(function (button) {
+    button.addEventListener('click', function () { pickFile(Number(button.getAttribute('data-vision-file'))); });
+  });
+  root.getElementById('d1').addEventListener('click', function () { pickFile(1); });
+  root.getElementById('d2').addEventListener('click', function () { pickFile(2); });
+  [1, 2].forEach(function (which) {
+    var drop = root.getElementById('d' + which);
+    drop.addEventListener('dragover', function (event) { event.preventDefault(); drop.style.borderColor = '#155EEF'; });
+    drop.addEventListener('dragleave', function () { drop.style.borderColor = ''; });
+    drop.addEventListener('drop', function (event) {
+      event.preventDefault(); drop.style.borderColor = '';
+      var file = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
+      if (file) loadWorkbook(which, file);
+    });
+    bindFilePicker(which);
+  });
+})();
