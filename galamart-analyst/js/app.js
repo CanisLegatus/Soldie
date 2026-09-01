@@ -141,6 +141,11 @@ segBtns.forEach(btn => {
     dateLabel.textContent = currentMode === 'sellto' ? '2. Дата окончания продаж (до)' : '2. Дата ввоза (до)';
     filterDateInput.value = '';
     hideAllPages();
+    if (currentMode === 'vision') {
+      visionCard.classList.remove('hidden');
+      updateBtn();
+      return;
+    }
     if (rawData.length) {
       if (currentMode === 'browse' && browseData) { rebuildGroupOptions(); applyBrowse(); }
       if (currentMode === 'top100') renderTop100();
@@ -162,6 +167,8 @@ processBtn.addEventListener('click', async () => {
   showStatus('Фильтрация и расчёт...', 'success');
   processBtn.disabled = true;
   await new Promise(r => setTimeout(r, 40));
+
+  if (currentMode === 'vision') { visionCard.classList.remove('hidden'); processBtn.disabled = false; return; }
 
   if (currentMode === 'browse') {
     browseData = rawData.slice();

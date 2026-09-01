@@ -23,6 +23,7 @@ const mdTotalsEl      = document.getElementById('mdTotals');
 const theadEl         = document.querySelector('#dataTable thead');
 const tableBody       = document.getElementById('tableBody');
 const segBtns         = document.querySelectorAll('.seg-btn');
+const visionCard      = document.getElementById('visionCard');
 const dashCard        = document.getElementById('dashCard');
 const dashContent     = document.getElementById('dashContent');
 const analysisCard    = document.getElementById('analysisCard');
@@ -271,6 +272,7 @@ function scopeMarkupStock(scope) {
 // ── Навигация ──
 function hideAllPages() {
   resultEl.classList.add('hidden');
+  visionCard.classList.add('hidden');
   dashCard.classList.add('hidden');
   analysisCard.classList.add('hidden');
   topCard.classList.add('hidden');
