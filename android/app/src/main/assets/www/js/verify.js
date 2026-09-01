@@ -1,3 +1,4 @@
+window.__bootStamp && window.__bootStamp('js/verify.js: выполнение');
 /* Быстрая проверка товара на полке: SKU, его группа и КУБ. */
 function renderVerify() {
   if (!rawData.length) { showStatus('❌ Сначала загрузите файл.', 'error'); return; }

@@ -1,3 +1,4 @@
+window.__bootStamp && window.__bootStamp('js/dashboard.js: выполнение');
 /* ══════════════════════════════════════════════════════════════
    dashboard.js — дашборд и его детализации
    ══════════════════════════════════════════════════════════════ */
@@ -12,7 +13,7 @@ function stockBucketKey(r) {
   if (sdl.days <= 90) return 'd90';
   return 'over';
 }
-const STOCK_BUCKETS = {
+var STOCK_BUCKETS = {
   empty:   { label: 'Пусто / обнулено', color: '#ef4444' },
   d14:     { label: 'Хватит ≤ 14 дн', color: '#f59e0b' },
   d30:     { label: '15–30 дн', color: '#eab308' },
@@ -31,7 +32,7 @@ function markupBucketKey(r) {
   if (m < 70) return 'b70';
   return 'b70p';
 }
-const MK_LABELS = { neg: '< 0% (убыток)', b10: '0–10%', b20: '10–20%', b40: '20–40%', b70: '40–70%', b70p: '≥ 70%', no: 'нет себестоимости' };
+var MK_LABELS = { neg: '< 0% (убыток)', b10: '0–10%', b20: '10–20%', b40: '20–40%', b70: '40–70%', b70p: '≥ 70%', no: 'нет себестоимости' };
 
 function renderDashboard() {
   if (!rawData.length) { showStatus('❌ Сначала загрузите файл.', 'error'); return; }
@@ -158,10 +159,22 @@ dashContent.addEventListener('click', e => {
   const p = e.target.closest('[data-open-product]');
   if (p) openProduct(p.dataset.code, null);
 });
-document.getElementById('dashRefreshBtn').addEventListener('click', renderDashboard);
+(function bindDashboardEvents() {
+  try {
+    var refreshButton = document.getElementById('dashRefreshBtn');
+    if (!refreshButton) throw new Error('Не найден #dashRefreshBtn: разметка index.html не успела загрузиться');
+    refreshButton.addEventListener('click', renderDashboard);
+  } catch (error) {
+    var detail = 'dashboard.js: привязка обработчиков\nОшибка: ' + (error && error.name ? error.name + ': ' : '')
+      + (error && error.message ? error.message : String(error)) + (error && error.stack ? '\nStack: ' + error.stack : '');
+    if (window.__bootErrors) window.__bootErrors.push(detail);
+    if (window.__bootTrace) window.__bootTrace.push({ stage: 'ОШИБКА dashboard.js', detail: detail, time: new Date().toISOString() });
+    if (window.console) window.console.error(detail, error);
+  }
+})();
 
 // ── Детализации ──
-let currentDrillKey = null;
+var currentDrillKey = null;
 function drillShell(title, sub, tilesHtml, bodyHtml, pageKey) {
   currentDrillKey = pageKey || null;
   modalBox.innerHTML = `

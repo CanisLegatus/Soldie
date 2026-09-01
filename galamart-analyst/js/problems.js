@@ -1,3 +1,4 @@
+window.__bootStamp && window.__bootStamp('js/problems.js: выполнение');
 /* Панель «Проблемы»: исключения по SKU с навигацией магазин → отделы → товары. */
 const ISSUE_TYPES = [
   { key:'shortage', icon:'🔴', label:'Недосток', desc:'риск потерять продажи до следующей поставки' },
