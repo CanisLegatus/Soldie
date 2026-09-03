@@ -4,22 +4,23 @@
   var host = document.getElementById('visionHost');
   if (!host || !host.attachShadow) return;
   var root = host.attachShadow({ mode: 'open' });
-  root.innerHTML = '<link rel="stylesheet" href="vision.css">' + '\n\n<header>\n  <div class="wrap hbar">\n    <div class="logo">V</div>\n    <div><h1>Vision</h1><small>дашборд директора магазина · август 2026</small></div>\n    <div class="hspace">\n      <span class="fchip" id="ch2"><span class="dot"></span><span id="ch2t">Статистика — не загружена</span></span>\n      <span class="fchip" id="ch1"><span class="dot"></span><span id="ch1t">План-факт — не загружен</span></span>\n      <button class="btn" data-vision-file="2">⬆ Статистика</button>\n      <button class="btn" data-vision-file="1">⬆ План-факт</button>\n    </div>\n  </div>\n</header>\n\n<section id="hero">\n  <div class="wrap">\n    <div class="lead">\n      <h2><em>Vision</em> — весь магазин на одном экране</h2>\n      <p>Загрузите «Статистику расширенную» (обязательно) и «Рейтинг / план-факт» (прогнозы, дневная динамика, ассортимент). Каждый показатель кликабелен — внутри драйвер-дерево: за счёт чего магазин растёт или отстаёт.</p>\n    </div>\n    <div class="drops">\n      <div class="drop" id="d2">\n        <h3>📗 Файл 2 · Статистика (расширенная) ГМ</h3>\n        <p>Вкладка «статистика расширенная»: ТО, ВП, наценка, чеки, средний чек, м², остатки, SKU — план/факт и прошлый год.</p>\n        <div class="st" id="dst2"></div>\n      </div>\n      <div class="drop" id="d1">\n        <h3>📘 Файл 1 · Рейтинг и план-факт</h3>\n        <p>Прогнозы, прирост МТМ, LFL, дневные план/факт/прогноз по ТО и чекам, продажи по товарным группам.</p>\n        <div class="st" id="dst1"></div>\n      </div>\n    </div>\n  </div>\n</section>\n\n<main id="app" class="wrap hidden">\n  <div class="cbar">\n    <div class="field"><label>Поиск магазина</label><input id="storeQ" placeholder="Начните вводить…" style="width:220px"/></div>\n    <div class="field"><label>Магазин</label><select id="storeSel"></select></div>\n    <div class="field"><label>Сравнивать с</label>\n      <select id="mode">\n        <option value="net">Вся сеть</option>\n        <option value="fo">Мой федеральный округ</option>\n        <option value="reg">Мой регион</option>\n        <option value="lfl">Моя LFL-группа</option>\n        <option value="sim">Похожие магазины</option>\n        <option value="custom">Произвольная выборка</option>\n      </select>\n    </div>\n    <div class="field"><label>Выборка</label><button class="btn" id="customBtn">🎯 <span id="customLbl">Собрать выборку</span></button></div>\n    <div class="tags" id="tags"></div>\n  </div>\n  <div class="tabs" id="tabs"></div>\n  <section id="view"></section>\n</main>\n\n<div class="modal" id="customM">\n  <div class="mbox">\n    <div class="mhead"><h3>Произвольная выборка для сравнения</h3><button class="btn" id="mclose">✕</button></div>\n    <div class="mbody">\n      <input id="msearch" placeholder="Поиск по названию, региону, округу…"/>\n      <div class="mlist" id="mlist"></div>\n    </div>\n    <div class="mfoot">\n      <span class="cnt" id="mcnt"></span>\n      <div style="display:flex;gap:8px">\n        <button class="btn" id="mclear">Очистить</button>\n        <button class="btn" id="mapply" style="background:var(--acc);border-color:var(--acc);color:#fff">Применить</button>\n      </div>\n    </div>\n  </div>\n</div>\n\n<div class="modal" id="drillM">\n  <div class="mbox wide">\n    <div class="mhead"><h3 id="drillTitle">Анализ показателя</h3><button class="btn" id="drillClose">✕</button></div>\n    <div class="mbody" id="drillBody"></div>\n  </div>\n</div>\n\n<div id="busy"><div class="spin"></div><div class="bt" id="busyT">Читаю файл…</div></div>\n<div id="statusline">Готов к загрузке файлов</div>\n<footer>Vision · данные читаются локально в браузере · кликните на любую карточку или показатель, чтобы увидеть драйвер-анализ</footer>\n\n<input type="file" id="f1" accept=".xlsx,.xls" style="position:fixed;top:-100px;left:-100px;width:1px;height:1px;opacity:0"/>\n<input type="file" id="f2" accept=".xlsx,.xls" style="position:fixed;top:-100px;left:-100px;width:1px;height:1px;opacity:0"/>\n\n';
-  var document = root;
+  root.innerHTML = '<link rel="stylesheet" href="../vision.css">' + '\n\n<header>\n  <div class="wrap hbar">\n    <div class="logo">V</div>\n    <div><h1>Vision</h1><small>дашборд директора магазина · август 2026</small></div>\n    <div class="hspace">\n      <span class="fchip" id="ch2"><span class="dot"></span><span id="ch2t">Статистика — не загружена</span></span>\n      <span class="fchip" id="ch1"><span class="dot"></span><span id="ch1t">План-факт — не загружен</span></span>\n      <button class="btn" data-vision-file="2">⬆ Статистика</button>\n      <button class="btn" data-vision-file="1">⬆ План-факт</button>\n    </div>\n  </div>\n</header>\n\n<section id="hero">\n  <div class="wrap">\n    <div class="lead">\n      <h2><em>Vision</em> — весь магазин на одном экране</h2>\n      <p>Загрузите «Статистику расширенную» (обязательно) и «Рейтинг / план-факт» (прогнозы, дневная динамика, ассортимент). Каждый показатель кликабелен — внутри драйвер-дерево: за счёт чего магазин растёт или отстаёт.</p>\n    </div>\n    <div class="drops">\n      <div class="drop" id="d2">\n        <h3>📗 Файл 2 · Статистика (расширенная) ГМ</h3>\n        <p>Вкладка «статистика расширенная»: ТО, ВП, наценка, чеки, средний чек, м², остатки, SKU — план/факт и прошлый год.</p>\n        <div class="st" id="dst2"></div>\n      </div>\n      <div class="drop" id="d1">\n        <h3>📘 Файл 1 · Рейтинг и план-факт</h3>\n        <p>Прогнозы, прирост МТМ, LFL, дневные план/факт/прогноз по ТО и чекам, продажи по товарным группам.</p>\n        <div class="st" id="dst1"></div>\n      </div>\n    </div>\n  </div>\n</section>\n\n<main id="app" class="wrap hidden">\n  <div class="cbar">\n    <div class="field"><label>Поиск магазина</label><input id="storeQ" placeholder="Начните вводить…" style="width:220px"/></div>\n    <div class="field"><label>Магазин</label><select id="storeSel"></select></div>\n    <div class="field"><label>Сравнивать с</label>\n      <select id="mode">\n        <option value="net">Вся сеть</option>\n        <option value="fo">Мой федеральный округ</option>\n        <option value="reg">Мой регион</option>\n        <option value="lfl">Моя LFL-группа</option>\n        <option value="sim">Похожие магазины</option>\n        <option value="custom">Произвольная выборка</option>\n      </select>\n    </div>\n    <div class="field"><label>Выборка</label><button class="btn" id="customBtn">🎯 <span id="customLbl">Собрать выборку</span></button></div>\n    <div class="tags" id="tags"></div>\n  </div>\n  <div class="tabs" id="tabs"></div>\n  <section id="view"></section>\n</main>\n\n<div class="modal" id="customM">\n  <div class="mbox">\n    <div class="mhead"><h3>Произвольная выборка для сравнения</h3><button class="btn" id="mclose">✕</button></div>\n    <div class="mbody">\n      <input id="msearch" placeholder="Поиск по названию, региону, округу…"/>\n      <div class="mlist" id="mlist"></div>\n    </div>\n    <div class="mfoot">\n      <span class="cnt" id="mcnt"></span>\n      <div style="display:flex;gap:8px">\n        <button class="btn" id="mclear">Очистить</button>\n        <button class="btn" id="mapply" style="background:var(--acc);border-color:var(--acc);color:#fff">Применить</button>\n      </div>\n    </div>\n  </div>\n</div>\n\n<div class="modal" id="drillM">\n  <div class="mbox wide">\n    <div class="mhead"><h3 id="drillTitle">Анализ показателя</h3><button class="btn" id="drillClose">✕</button></div>\n    <div class="mbody" id="drillBody"></div>\n  </div>\n</div>\n\n<div id="busy"><div class="spin"></div><div class="bt" id="busyT">Читаю файл…</div></div>\n<div id="statusline">Готов к загрузке файлов</div>\n<footer>Vision · данные читаются локально в браузере · кликните на любую карточку или показатель, чтобы увидеть драйвер-анализ</footer>\n\n<input type="file" id="f1" accept=".xlsx,.xls" style="position:fixed;top:-100px;left:-100px;width:1px;height:1px;opacity:0"/>\n<input type="file" id="f2" accept=".xlsx,.xls" style="position:fixed;top:-100px;left:-100px;width:1px;height:1px;opacity:0"/>\n\n';
+  var doc = root;
+  var mainDoc = document;
 
-function $(id){return document.getElementById(id);}
+function $(id){return doc.getElementById(id);}
 function vStatus(msg,isErr){
-  var el=document.getElementById('statusline');
+  var el=doc.getElementById('statusline');
   if(el){el.textContent=msg;el.style.color=isErr?'#D92D20':'#667085';}
 }
 function showBusy(on,text){
-  var b=document.getElementById('busy');
+  var b=doc.getElementById('busy');
   if(!b){return;}
-  if(text){var t=document.getElementById('busyT');if(t){t.textContent=text;}}
+  if(text){var t=doc.getElementById('busyT');if(t){t.textContent=text;}}
   if(on){b.classList.add('on');}else{b.classList.remove('on');}
 }
 function pickFile(w){
-  var inp=document.getElementById(w===1?'f1':'f2');
+  var inp=doc.getElementById(w===1?'f1':'f2');
   if(inp){inp.click();}
 }
 function onFilePicked(w,inp){
@@ -76,7 +77,7 @@ var ST={stores:[],byNorm:{},sel:null,mode:'net',custom:{},tab:'ov',sort:{k:'to',
 var F1={rating:{},dailyTO:{},dailyChk:{},net:null,tn:{},loaded:false};
 var TNIDX={groups:{},totalRev:0,regionTotals:{}};
 
-function $(id){return document.getElementById(id);}
+function $(id){return doc.getElementById(id);}
 function s(v){return v==null?'':String(v);}
 function esc(q){return String(q).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');}
 function num(v){
@@ -1804,12 +1805,12 @@ function initApp(){
   });
   $('drillClose').addEventListener('click',closeDrill);
   $('drillM').addEventListener('click',function(e){if(e.target===this){closeDrill();}});
-  document.addEventListener('keydown',function(e){
+  mainDoc.addEventListener('keydown',function(e){
     if(e.key==='Escape'){closeDrill();closeCustom();}
   });
-  document.addEventListener('click',function(e){
+  mainDoc.addEventListener('click',function(e){
     var t=e.target;
-    while(t&&t!==document){
+    while(t&&t!==mainDoc){
       if(t.getAttribute&&t.getAttribute('data-drill')){
         openDrill(t.getAttribute('data-drill'));
         return;
