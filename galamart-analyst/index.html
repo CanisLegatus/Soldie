@@ -130,7 +130,8 @@
     .suggested      { color: var(--primary); font-weight: 600; }
     .suggested-fire { color: var(--error);   font-weight: 700; }
 
-    #visionCard { background: var(--bg); border-radius: var(--radius); overflow: hidden; margin-bottom: 18px; }
+    #visionCard { background: var(--bg); border-radius: var(--radius); margin-bottom: 18px; position: relative; }
+    #visionHost { min-height: calc(100vh - 40px); }
     #visionFrame { display: block; width: 100%; min-height: calc(100vh - 40px); border: 0; background: #f5f7fa; }
     .hidden { display: none !important; }
     .text-muted { color: var(--text-muted); }
@@ -349,6 +350,7 @@
       .seg-btn { padding-inline: 11px; }
     }
   </style>
+  <link rel="stylesheet" href="vision.css">
 </head>
 <body>
 <div class="container">
