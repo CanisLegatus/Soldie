@@ -254,16 +254,17 @@
     .trial-row.on { border-color: var(--primary); background: #eff6ff; }
     .zone-scroll { max-height: 44vh; overflow: auto; border: 1px solid var(--border); border-radius: 8px; }
 
-    .modal-overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.45); backdrop-filter: blur(3px); display: none; align-items: flex-start; justify-content: center; padding: 30px 16px; z-index: 1000; overflow-y: auto; animation: fadeIn 0.2s; }
-    .modal-overlay:not(.hidden) { display: flex; }
-    .modal { background: #fff; border-radius: 14px; box-shadow: 0 20px 60px rgba(0,0,0,0.25); width: 100%; max-width: 1020px; padding: 22px; animation: slideUp 0.25s; }
-    .modal h4 { margin: 14px 0 6px; font-size: 0.9rem; }
-    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-    @keyframes slideUp { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
-    .modal-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; margin-bottom: 10px; }
-    .modal-head h3 { margin: 4px 0 4px; font-size: 1.05rem; white-space: normal; }
-    .modal-close { background: #f1f5f9; color: #334155; padding: 6px 12px; }
-    .modal-close:hover:not(:disabled) { background: #e2e8f0; color: #0f172a; transform: none; }
+    /* Модальные окна - стили с повышенной специфичностью для переопределения vision.css */
+    #modalOverlay.modal-overlay { position: fixed !important; inset: 0 !important; background: rgba(15,23,42,0.45) !important; backdrop-filter: blur(3px) !important; -webkit-backdrop-filter: blur(3px) !important; display: none !important; align-items: flex-start !important; justify-content: center !important; padding: 30px 16px !important; z-index: 9999 !important; overflow-y: auto !important; animation: fadeIn 0.2s !important; }
+    #modalOverlay.modal-overlay:not(.hidden) { display: flex !important; }
+    #modalBox.modal { background: #fff !important; border-radius: 14px !important; box-shadow: 0 20px 60px rgba(0,0,0,0.25) !important; width: 100% !important; max-width: 1020px !important; padding: 22px !important; animation: slideUp 0.25s !important; position: relative !important; z-index: 10000 !important; }
+    #modalBox.modal h4 { margin: 14px 0 6px !important; font-size: 0.9rem !important; }
+    @keyframes fadeIn { from { opacity: 0 !important; } to { opacity: 1 !important; } }
+    @keyframes slideUp { from { opacity: 0 !important; transform: translateY(14px) !important; } to { opacity: 1 !important; transform: none !important; } }
+    .modal-head { display: flex !important; justify-content: space-between !important; gap: 12px !important; align-items: flex-start !important; margin-bottom: 10px !important; }
+    .modal-head h3 { margin: 4px 0 4px !important; font-size: 1.05rem !important; white-space: normal !important; }
+    .modal-close { background: #f1f5f9 !important; color: #334155 !important; padding: 6px 12px !important; }
+    .modal-close:hover:not(:disabled) { background: #e2e8f0 !important; color: #0f172a !important; transform: none !important; }
     .back-btn { background: #eff6ff; color: var(--primary); padding: 5px 10px; font-size: 0.75rem; margin-right: 8px; }
     .back-btn:hover:not(:disabled) { background: #dbeafe; color: var(--primary-hover); transform: none; }
     .breadcrumb { font-size: 0.8rem; color: var(--text-muted); display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
@@ -340,12 +341,12 @@
       .issues-hero { grid-template-columns:1fr; }
       .issue-node { min-height:58px; padding:10px; }
       .issue-node .node-stats { max-width:105px; }
-      .modal-overlay { align-items: flex-end; padding: 0; }
-      .modal-overlay:not(.hidden) { display: flex !important; }
+      #modalOverlay.modal-overlay { align-items: flex-end !important; padding: 0 !important; }
+      #modalOverlay.modal-overlay:not(.hidden) { display: flex !important; }
       /* Скролл остаётся внутри белой поверхности модального окна: оверлей не
          должен быть виден под длинными карточками на Android/iOS. */
-      .modal { box-sizing: border-box; flex: 0 1 auto; max-height: 92vh; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; border-radius: 16px 16px 0 0; padding: 14px 14px max(14px, env(safe-area-inset-bottom)); background: #fff; }
-      .modal-head { position: sticky; top: -14px; background: #fff; padding-top: 4px; z-index: 2; }
+      #modalBox.modal { box-sizing: border-box !important; flex: 0 1 auto !important; max-height: 92vh !important; overflow-y: auto !important; overscroll-behavior: contain !important; -webkit-overflow-scrolling: touch !important; border-radius: 16px 16px 0 0 !important; padding: 14px 14px max(14px, env(safe-area-inset-bottom)) !important; background: #fff !important; }
+      .modal-head { position: sticky !important; top: -14px !important; background: #fff !important; padding-top: 4px !important; z-index: 2 !important; }
       .mini-table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
     }
 
