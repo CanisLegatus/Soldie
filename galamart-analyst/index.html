@@ -356,6 +356,27 @@
     }
   </style>
   <link rel="stylesheet" href="vision.css">
+  <style>
+    /* Модальные окна - стили с повышенной специфичностью для переопределения vision.css */
+    #modalOverlay.modal-overlay { position: fixed !important; inset: 0 !important; background: rgba(15,23,42,0.45) !important; backdrop-filter: blur(3px) !important; -webkit-backdrop-filter: blur(3px) !important; display: none !important; align-items: flex-start !important; justify-content: center !important; padding: 30px 16px !important; z-index: 9999 !important; overflow-y: auto !important; animation: fadeIn 0.2s !important; }
+    #modalOverlay.modal-overlay:not(.hidden) { display: flex !important; }
+    #modalBox.modal { background: #fff !important; border-radius: 14px !important; box-shadow: 0 20px 60px rgba(0,0,0,0.25) !important; width: 100% !important; max-width: 1020px !important; padding: 22px !important; animation: slideUp 0.25s !important; position: relative !important; z-index: 10000 !important; }
+    #modalBox.modal h4 { margin: 14px 0 6px !important; font-size: 0.9rem !important; }
+    @keyframes fadeIn { from { opacity: 0 !important; } to { opacity: 1 !important; } }
+    @keyframes slideUp { from { opacity: 0 !important; transform: translateY(14px) !important; } to { opacity: 1 !important; transform: none !important; } }
+    .modal-head { display: flex !important; justify-content: space-between !important; gap: 12px !important; align-items: flex-start !important; margin-bottom: 10px !important; }
+    .modal-head h3 { margin: 4px 0 4px !important; font-size: 1.05rem !important; white-space: normal !important; }
+    .modal-close { background: #f1f5f9 !important; color: #334155 !important; padding: 6px 12px !important; }
+    .modal-close:hover:not(:disabled) { background: #e2e8f0 !important; color: #0f172a !important; transform: none !important; }
+    .back-btn { background: #eff6ff; color: var(--primary); padding: 5px 10px; font-size: 0.75rem; margin-right: 8px; }
+    .back-btn:hover:not(:disabled) { background: #dbeafe; color: var(--primary-hover); transform: none; }
+    .breadcrumb { font-size: 0.8rem; color: var(--text-muted); display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+
+    .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin: 14px 0; }
+    .kpi { background: #f8fafc; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+    .kpi-label { font-size: 0.72rem; color: var(--text-muted); margin-bottom: 3px; }
+    .kpi-value { font-size: 1.05rem; font-weight: 700; }
+  </style>
 </head>
 <body>
 <div class="container">
