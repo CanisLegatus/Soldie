@@ -178,7 +178,7 @@ var currentDrillKey = null;
 function drillShell(title, sub, tilesHtml, bodyHtml, pageKey) {
   currentDrillKey = pageKey || null;
   modalBox.innerHTML = `
-    <div class="modal-head">
+    <div class="main-modal-head">
       <div style="min-width:0">
         <div class="breadcrumb">📊 Дашборд · детализация</div>
         <h3>${title}</h3>
@@ -187,7 +187,7 @@ function drillShell(title, sub, tilesHtml, bodyHtml, pageKey) {
       <div style="display:flex;gap:6px">
         ${pageKey ? `<button type="button" data-an-page-jump="${pageKey}">🔬 Полная страница →</button>` : ''}
         <button type="button" class="btn-export" id="drillExportBtn">⬇️ Excel</button>
-        <button class="modal-close" type="button" data-modal-close>✕ Закрыть</button>
+        <button class="main-modal-close" type="button" data-modal-close>✕ Закрыть</button>
       </div>
     </div>
     ${tilesHtml ? `<div class="kpi-grid">${tilesHtml}</div>` : ''}

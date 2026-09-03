@@ -305,7 +305,7 @@ function openZoneModal(id) {
   }).join('');
 
   modalBox.innerHTML = `
-    <div class="modal-head">
+    <div class="main-modal-head">
       <div style="min-width:0">
         <div class="breadcrumb">🧱 Коммерческая зона${parentMega ? ` · входит в мега-зону «${escapeHtml(parentMega.name)}»` : ''}</div>
         <h3>${escapeHtml(z.name)}</h3>
@@ -314,7 +314,7 @@ function openZoneModal(id) {
       <div style="display:flex;gap:6px;flex-wrap:wrap">
         <button type="button" class="btn-ghost" data-zone-rename="${z.id}">✎ Переименовать</button>
         <button type="button" class="btn-danger" data-zone-delete="${z.id}">🗑 Удалить</button>
-        <button type="button" class="modal-close" data-modal-close>✕</button>
+        <button type="button" class="main-modal-close" data-modal-close>✕</button>
       </div>
     </div>
     ${st ? `<div class="alert-item alert-warn" style="margin-bottom:8px">🚚 Ближайшая поставка: <b>${fmtDate(zlog.arrivalDate)}</b> (через ${zlog.arrivalIn} дн.). Правило: к моменту поставки остаток должен быть ≥ <b>норма выкладки + 10%</b> (кросс-выкладки). Иначе — «НУЖЕН ДОЗАКАЗ».</div>
@@ -462,7 +462,7 @@ function openMegaModal(id) {
   }).join('');
 
   modalBox.innerHTML = `
-    <div class="modal-head">
+    <div class="main-modal-head">
       <div style="min-width:0">
         <div class="breadcrumb">🧩 Мега-зона (объединённая статистика)</div>
         <h3>${escapeHtml(m.name)}</h3>
@@ -471,7 +471,7 @@ function openMegaModal(id) {
       <div style="display:flex;gap:6px;flex-wrap:wrap">
         <button type="button" class="btn-ghost" data-mega-rename="${m.id}">✎ Переименовать</button>
         <button type="button" class="btn-danger" data-mega-split="${m.id}">✖ Разделить</button>
-        <button type="button" class="modal-close" data-modal-close>✕</button>
+        <button type="button" class="main-modal-close" data-modal-close>✕</button>
       </div>
     </div>
     ${st ? `<div class="kpi-grid">${tiles}</div>` : '<div class="alert-item alert-warn">Загрузите отчёт, чтобы увидеть аналитику.</div>'}

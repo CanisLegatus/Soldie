@@ -50,13 +50,13 @@ function openProduct(code, backPath) {
   ];
 
   modalBox.innerHTML = `
-    <div class="modal-head">
+    <div class="main-modal-head">
       <div style="min-width:0">
         <div class="breadcrumb">${backBtnHtml}🗂 ${crumbs.join(' <span>›</span> ') || 'без группы'}</div>
         <h3>${escapeHtml(r['код'])} — ${escapeHtml(r['товар'] || 'без названия')}</h3>
         <div>${cubeBadge(cubeRaw)}</div>
       </div>
-      <button class="modal-close" type="button" data-modal-close>✕ Закрыть</button>
+      <button class="main-modal-close" type="button" data-modal-close>✕ Закрыть</button>
     </div>
     ${alerts.length ? `<div class="alerts">${alerts.map(a => `<div class="alert-item ${a.cls}">${a.text}</div>`).join('')}</div>` : ''}
     <div class="kpi-grid">
@@ -76,7 +76,7 @@ function openCube(rawCube) {
   const A = aggRows(items);
   const byGroup = byGroupAgg(items, 'группа 1').sort((a, b) => b.a.to - a.a.to);
   const rows = byGroup.map(e => `<tr><td><span class="link-cell" data-open-group data-g1="${escapeHtml(e.g)}">${escapeHtml(e.g)}</span></td><td>${fmt(e.a.sku)}</td><td>${fmt(e.a.to)} ₽</td><td>${fmt(e.a.gp)} ₽</td><td>${fmt(e.a.stockSum)} ₽</td><td>${coverBadge(e.a.turnover)}</td></tr>`).join('');
-  modalBox.innerHTML = `<div class="modal-head"><div><div class="breadcrumb">🏷 Карточка КУБА</div><h3>${cubeBadge(cube)}</h3></div><button class="modal-close" type="button" data-modal-close>✕ Закрыть</button></div><div class="kpi-grid">${tileHtml('SKU',fmt(A.sku))}${tileHtml('ТО',fmt(A.to)+' ₽','kpi-accent')}${tileHtml('Валовая прибыль',fmt(A.gp)+' ₽','',`маржа ${A.margin.toFixed(1)}%`) }${tileHtml('Склад',fmt(A.stockSum)+' ₽','',`${fmt(A.stock)} шт`) }${tileHtml('Оборачиваемость',fmtDays(A.turnover)+' дн.','',`${A.rate.toFixed(1)} шт/дн`)}</div><div class="zone-scroll"><table class="mini-table sortable"><thead><tr><th>Группа 1</th><th>SKU</th><th>ТО</th><th>ВП</th><th>Склад</th><th>Оборач.</th></tr></thead><tbody>${rows}</tbody></table></div><div class="hint">Клик по группе открывает её карточку. КУБ агрегирован по всем товарам с этим значением.</div>`;
+  modalBox.innerHTML = `<div class="main-modal-head"><div><div class="breadcrumb">🏷 Карточка КУБА</div><h3>${cubeBadge(cube)}</h3></div><button class="main-modal-close" type="button" data-modal-close>✕ Закрыть</button></div><div class="kpi-grid">${tileHtml('SKU',fmt(A.sku))}${tileHtml('ТО',fmt(A.to)+' ₽','kpi-accent')}${tileHtml('Валовая прибыль',fmt(A.gp)+' ₽','',`маржа ${A.margin.toFixed(1)}%`) }${tileHtml('Склад',fmt(A.stockSum)+' ₽','',`${fmt(A.stock)} шт`) }${tileHtml('Оборачиваемость',fmtDays(A.turnover)+' дн.','',`${A.rate.toFixed(1)} шт/дн`)}</div><div class="zone-scroll"><table class="mini-table sortable"><thead><tr><th>Группа 1</th><th>SKU</th><th>ТО</th><th>ВП</th><th>Склад</th><th>Оборач.</th></tr></thead><tbody>${rows}</tbody></table></div><div class="hint">Клик по группе открывает её карточку. КУБ агрегирован по всем товарам с этим значением.</div>`;
   modalOverlay.classList.remove('hidden');
 }
 
@@ -181,13 +181,13 @@ function renderGroupCard() {
   const unit = currentGroupTab === 'qty' ? ' шт' : ' ₽';
 
   modalBox.innerHTML = `
-    <div class="modal-head">
+    <div class="main-modal-head">
       <div style="min-width:0">
         <div class="breadcrumb">🗂 Карточка группы</div>
         <h3>${escapeHtml(path)}</h3>
         <div class="text-muted">${items.length} SKU</div>
       </div>
-      <button class="modal-close" type="button" data-modal-close>✕ Закрыть</button>
+      <button class="main-modal-close" type="button" data-modal-close>✕ Закрыть</button>
     </div>
 
     <div class="kpi-grid">
