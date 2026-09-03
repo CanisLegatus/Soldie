@@ -512,13 +512,14 @@
     <div id="giftsSummary" style="margin-top:12px"></div>
     <div id="giftsContent" style="margin-top:10px"></div>
   </div>
+  
+  <!-- Модальное окно (вне контейнера для правильного позиционирования) -->
+  <div id="modalOverlay" class="modal-overlay hidden">
+    <div class="modal" id="modalBox"></div>
+  </div>
 </div>
 
 <!-- Библиотеки локально (скачать и положить в папку lib/) -->
-<div id="modalOverlay" class="modal-overlay hidden">
-  <div class="modal" id="modalBox"></div>
-</div>
-
 <script>
   // Диагностика запуска: при открытии index.html через file:// Chromium часто отдаёт
   // только «Script error.». Журнал ниже сохраняет точный ресурс, этап и координаты.
