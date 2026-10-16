@@ -152,6 +152,11 @@ segBtns.forEach(btn => {
       updateBtn();
       return;
     }
+    if (currentMode === 'sales') {
+      activateSales();
+      updateBtn();
+      return;
+    }
     if (rawData.length) {
       if (currentMode === 'browse' && browseData) { rebuildGroupOptions(); applyBrowse(); }
       if (currentMode === 'top100') renderTop100();
@@ -185,6 +190,36 @@ function activateSku3() {
 }
 window.sku3Hide = function () { const c = document.getElementById('sku3Card'); if (c) c.classList.add('hidden'); };
 
+// ── Раздел «💰 Продажи» (дашборд на файлах продаж suadela): ленивая активация ──
+let salesReady = false;
+function activateSales() {
+  if (typeof window.salesRenderMarkup !== 'function' || typeof window.salesInit !== 'function') {
+    showStatus('❌ Не загружен файл js/sales.js — раздел «Продажи» недоступен.', 'error');
+    return;
+  }
+  // Парсер и магазин данных продаж общие с 3SKU (suadela) — гарантируем готовность sku3Api.
+  if (!window.sku3Api && typeof window.sku3RenderMarkup === 'function') {
+    try {
+      window.sku3RenderMarkup();
+      window.sku3Init();
+      sku3Ready = true;
+    } catch (e) { console.error(e); }
+  }
+  if (!salesReady) {
+    window.salesRenderMarkup();
+    try {
+      window.salesInit();
+      salesReady = true;
+    } catch (e) {
+      console.error(e);
+      showStatus('❌ Ошибка инициализации раздела «Продажи»: ' + e.message, 'error');
+      return;
+    }
+  }
+  const card = document.getElementById('salesCard');
+  if (card) card.classList.remove('hidden');
+}
+
 // ── Кнопка «Обработать» ──
 processBtn.addEventListener('click', async () => {
   showStatus('Фильтрация и расчёт...', 'success');
@@ -193,6 +228,7 @@ processBtn.addEventListener('click', async () => {
 
   if (currentMode === 'vision') { visionCard.classList.remove('hidden'); processBtn.disabled = false; return; }
   if (currentMode === 'sku3')   { activateSku3(); processBtn.disabled = false; return; }
+  if (currentMode === 'sales')  { activateSales(); processBtn.disabled = false; return; }
 
   if (currentMode === 'browse') {
     browseData = rawData.slice();

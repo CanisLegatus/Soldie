@@ -276,6 +276,7 @@ function hideAllPages() {
   resultEl.classList.add('hidden');
   visionCard.classList.add('hidden');
   if (window.sku3Hide) window.sku3Hide();
+  if (window.salesHide) window.salesHide();
   dashCard.classList.add('hidden');
   analysisCard.classList.add('hidden');
   topCard.classList.add('hidden');
