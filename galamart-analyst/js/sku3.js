@@ -1394,7 +1394,10 @@ function renderAll(){
 }
 
 function renderTabs(){
-  document.querySelectorAll('[data-action="switch-tab"]').forEach(btn => {
+  // Область действия — только карточка 3SKU (#sku3Card), чтобы не конфликтовать
+  // с внутренними вкладками раздела «Продажи» (js/sales.js).
+  const root = document.getElementById('sku3Card') || document;
+  root.querySelectorAll('[data-action="switch-tab"]').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.tab === currentTab);
   });
   document.getElementById('tab-overview').hidden = currentTab !== 'overview';
@@ -2829,5 +2832,40 @@ function showToast(msg, type){
 }
 
     init();
+
+    /* ---------- Экспорт внутреннего API для раздела «💰 Продажи» (js/sales.js) ---------- */
+    window.sku3Api = {
+      getState: function(){ return state; },
+      getSettings: function(){ return state.settings; },
+      computeMetrics: function(){ return computeMetrics(); },
+      aggregateRecords: function(records){ return aggregateRecords(records); },
+      parseSalesFile: function(file){ return parseSalesFile(file); },
+      handleImportFiles: function(files){ return handleImportFiles(files); },
+      confirmImport: function(){ confirmImport(); },
+      renderAll: function(){ renderAll(); },
+      persist: function(){ persist(); },
+      openModal: function(id){ openModal(id); },
+      closeModal: function(id){ closeModal(id); },
+      showToast: function(msg, type){ showToast(msg, type); },
+      findReportDate: function(rows){ return findReportDate(rows); },
+      findHeader: function(rows){ return findHeader(rows); },
+      extractRecords: function(rows, start, header, date){ return extractRecords(rows, start, header, date); },
+      toISO: toISO,
+      parseISO: parseISO,
+      addDaysISO: addDaysISO,
+      todayISO: todayISO,
+      esc: esc,
+      round2: round2,
+      fmtNum: fmtNum,
+      fmtMoney: fmtMoney,
+      formatShortDate: formatShortDate,
+      formatFullDate: formatFullDate,
+      normArticle: normArticle
+    };
+
+    window.sku3Hide = function () {
+      var c = document.getElementById('sku3Card');
+      if (c) c.classList.add('hidden');
+    };
   };
 })();
