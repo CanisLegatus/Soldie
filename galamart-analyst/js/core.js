@@ -330,9 +330,10 @@ document.addEventListener('click', e => {
 });
 
 // ── Загрузка отчёта ──
+// Данные не сбрасываются: новый отчёт накапливается в архиве истории,
+// а rawData пересобирается из архива (см. ingestLoadedData / storage.js).
 fileInput.addEventListener('change', () => {
-  rawData = []; browseData = null; analogCache = null;
-  hideAllPages(); updateBtn();
+  browseData = null; analogCache = null;
 });
 
 fileInput.addEventListener('change', (e) => {
@@ -363,21 +364,107 @@ fileInput.addEventListener('change', (e) => {
         for (const [i, canon] of Object.entries(headerMap)) obj[canon] = r[i] ?? '';
         return obj;
       });
-      codeIndex = new Map();
-      rawData.forEach(r => {
-        const c = String(r['код'] ?? '').trim();
-        if (c && !codeIndex.has(c)) codeIndex.set(c, r);
-      });
-      hideAllPages();
-      if (currentMode === 'dash') renderDashboard();
-      else if (currentMode === 'zones') renderZones();
-      else if (currentMode === 'analysis') renderAnalysis();
-      else if (currentMode === 'gifts') renderGifts();
-      showStatus(`✅ Загружено: ${rawData.length.toLocaleString('ru-RU')} строк.`, 'success');
-      updateBtn();
+      ingestLoadedData(rawData, file.name);
     } catch (err) { showStatus('❌ ' + err.message, 'error'); rawData = []; }
   };
   reader.readAsArrayBuffer(file);
+});
+
+// ── Приём разобранных данных: архив → накопительная сборка → рендеры ──
+function ingestLoadedData(rows, srcName) {
+  const snapDate = addSnapshotToHistory(rows, srcName);
+  rawData = buildRawFromHistory();
+  rebuildCodeIndex();
+  hideAllPages();
+  if (currentMode === 'dash') renderDashboard();
+  else if (currentMode === 'zones') renderZones();
+  else if (currentMode === 'analysis') renderAnalysis();
+  else if (currentMode === 'gifts') renderGifts();
+  updateHistoryChip();
+  const hs = historySummary();
+  showStatus(
+    `✅ Загружено: ${rows.length.toLocaleString('ru-RU')} строк` +
+    (snapDate ? ` · отчёт от ${snapDate.split('-').reverse().join('.')}` : '') +
+    `. В архиве ${hs ? hs.count : 0} ${pluralDays(hs ? hs.count : 0)} — данные сохранены и не забудутся при перезапуске.`,
+    'success'
+  );
+  updateBtn();
+}
+
+function rebuildCodeIndex() {
+  codeIndex = new Map();
+  analogCache = null;
+  rawData.forEach(r => {
+    const c = String(r['код'] ?? '').trim();
+    if (c && !codeIndex.has(c)) codeIndex.set(c, r);
+  });
+}
+
+// ── Автозагрузка накопленной истории при старте ──
+function restoreHistoryOnStartup() {
+  updateHistoryChip();
+  if (!rawData.length && dayKeysSorted().length) {
+    rawData = buildRawFromHistory();
+    rebuildCodeIndex();
+    if (currentMode === 'dash') renderDashboard();
+    const hs = historySummary();
+    showStatus(
+      `💾 Восстановлена сохранённая история: ${hs.count} ${pluralDays(hs.count)} (${hs.first.split('-').reverse().join('.')} — ${hs.last.split('-').reverse().join('.')}). Данные в памяти приложения — можно работать без повторной загрузки файлов.`,
+      'success'
+    );
+    updateBtn();
+  }
+}
+
+function updateHistoryChip() {
+  const el = document.getElementById('historyChip');
+  if (!el) return;
+  const hs = historySummary();
+  if (!hs) { el.textContent = '🗂 Архив пуст'; el.title = 'Загрузите отчёт — он сохранится автоматически'; return; }
+  el.textContent = `🗂 Архив: ${hs.count} ${pluralDays(hs.count)}`;
+  el.title = `Хранится локально (JSON): ${hs.first.split('-').reverse().join('.')} — ${hs.last.split('-').reverse().join('.')}`;
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const exportBtnH = document.getElementById('exportHistoryBtn');
+  const importBtnH = document.getElementById('importHistoryBtn');
+  const historyFileInput = document.getElementById('historyFileInput');
+  const clearBtnH = document.getElementById('clearHistoryBtn');
+  if (exportBtnH) exportBtnH.addEventListener('click', exportHistoryJson);
+  if (importBtnH && historyFileInput) {
+    importBtnH.addEventListener('click', () => historyFileInput.click());
+    historyFileInput.addEventListener('change', e => {
+      const f = e.target.files[0];
+      if (!f) return;
+      const rd = new FileReader();
+      rd.onload = () => {
+        try {
+          const added = importHistoryJson(String(rd.result));
+          rawData = buildRawFromHistory();
+          rebuildCodeIndex();
+          updateHistoryChip();
+          if (currentMode === 'dash') renderDashboard();
+          showStatus(`📂 История импортирована: дополнено ${added} ${pluralDays(added)}. Всего в архиве ${dayKeysSorted().length}.`, 'success');
+          updateBtn();
+        } catch (err) { showStatus('❌ Не удалось импортировать историю: ' + err.message, 'error'); }
+      };
+      rd.readAsText(f);
+      e.target.value = '';
+    });
+  }
+  if (clearBtnH) {
+    clearBtnH.addEventListener('click', () => {
+      if (!confirm('Удалить весь накопленный архив истории? Текущая сессия тоже очистится.')) return;
+      clearHistory();
+      rawData = []; browseData = null;
+      rebuildCodeIndex();
+      hideAllPages();
+      updateHistoryChip();
+      updateBtn();
+      showStatus('🗑 Архив истории очищен.', 'success');
+    });
+  }
+  restoreHistoryOnStartup();
 });
 // ── Экспорт в Excel (универсальный) ──
 function excelDateSuffix() {

@@ -34,8 +34,55 @@ function markupBucketKey(r) {
 }
 var MK_LABELS = { neg: '< 0% (убыток)', b10: '0–10%', b20: '10–20%', b40: '20–40%', b70: '40–70%', b70p: '≥ 70%', no: 'нет себестоимости' };
 
+// ── Скоуп динамики: 3 / 7 / 14 / 30 дней, всё, произвольный диапазон ──
+// Общие состояние и логика — в storage.js (dashScopeDays/From/To, scopeBarHtml,
+// bindScopeBar, scopedSeries): та же панель используется в Vision без дублей кода.
+function bindDashScopeBar() {
+  bindScopeBar('dashScopeBar', 'scope', renderDashboard);
+}
+
+function dashScopeHtml(seriesAll) {
+  const dates = seriesAll.map(p => p.date);
+  return scopeBarHtml({
+    id: 'dashScopeBar', cls: 'chip', activeCls: 'active', chipAttr: 'scope',
+    label: 'Период динамики:', minD: dates[0] || '', maxD: dates[dates.length - 1] || ''
+  });
+}
+
+// ── Дневная динамика ключевых показателей по архиву ──
+function dailyMetricsSeries(scoped) {
+  // Для каждой даты: накопительные метрики на конец этого дня — с ПРАВИЛЬНЫМ
+  // пониманием накопительных данных (месяц внутри себя замещается максимумом,
+  // месяцы между собой суммируются). Остатки — снапшот на дату.
+  const byDateStock = {};
+  for (const p of scoped) {
+    if (byDateStock[p.date]) continue;
+    const rows = historyStore.days[p.date].rows;
+    let stock = 0, stockSum = 0, sku = 0;
+    for (const code in rows) {
+      const st = num(desVal(rows[code]['склад кол']));
+      stock += st;
+      stockSum += num(desVal(rows[code]['склад сумма, руб.'])) || st * num(desVal(rows[code]['себ, руб.']));
+      sku++;
+    }
+    byDateStock[p.date] = { stock, stockSum, sku };
+  }
+  const cumCache = {};
+  const out = [];
+  for (const p of scoped) {
+    let cum = cumCache[p.date];
+    if (!cum) cum = cumCache[p.date] = recomputeCum(p.date);
+    let to = 0, gp = 0, sold = 0;
+    for (const code in cum) { to += cum[code].to; gp += cum[code].to - cum[code].toss; sold += cum[code].sold; }
+    const s = byDateStock[p.date] || { stock: 0, stockSum: 0, sku: 0 };
+    out.push({ date: p.date, to, gp, sold, stock: s.stock, stockSum: s.stockSum, sku: s.sku, salesQty: p.salesQty, salesTo: p.salesTo });
+  }
+  return out;
+}
+
 function renderDashboard() {
   if (!rawData.length) { showStatus('❌ Сначала загрузите файл.', 'error'); return; }
+  bindDashScopeBar();
   const log = getLogistics(cfg);
   const A = aggRows(rawData);
   const markupStock = scopeMarkupStock(rawData);
@@ -46,14 +93,28 @@ function renderDashboard() {
   const deadPctSku = A.sku > 0 ? A.deadCount / A.sku * 100 : 0;
   const deadPctStock = A.stockSum > 0 ? A.deadSum / A.stockSum * 100 : 0;
 
+  // Накопленная история → динамика
+  const seriesAll = snapshotsSeries();
+  const scoped = scopedSeries(seriesAll);
+  const dm = dailyMetricsSeries(scoped);
+  const first = dm[0], lastDm = dm[dm.length - 1];
+  const dTo = first && first.to > 0 ? ((lastDm.to - first.to) / first.to * 100) : null;
+  const dGp = first && first.gp !== 0 ? ((lastDm.gp - first.gp) / Math.abs(first.gp) * 100) : null;
+  const dSold = first && first.sold > 0 ? ((lastDm.sold - first.sold) / first.sold * 100) : null;
+  const salesSumQty = scoped.reduce((s, p) => s + p.salesQty, 0);
+  const hs = historySummary();
+  const scopeTxt = scopeLabel(scoped, seriesAll);
+  const dynBadge = (v) => v == null ? '' : `<div class="dk-sub">${v >= 0 ? '📈' : '📉'} ${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(1)}% за период</div>`;
+
   const cards = [
-    { key: 'to', icon: '💰', label: 'ТО (оборот)', value: fmt(A.to) + ' ₽', sub: `валовая прибыль ${fmt(A.gp)} ₽` },
-    { key: 'gp', icon: '📈', label: 'Валовая прибыль', value: fmt(A.gp) + ' ₽', sub: `маржа ${A.margin.toFixed(1)}% · наценка ${A.markup.toFixed(1)}%` },
+    { key: 'to', icon: '💰', label: 'ТО (оборот)', value: fmt(A.to) + ' ₽', sub: `валовая прибыль ${fmt(A.gp)} ₽`, dyn: dTo },
+    { key: 'gp', icon: '📈', label: 'Валовая прибыль', value: fmt(A.gp) + ' ₽', sub: `маржа ${A.margin.toFixed(1)}% · наценка ${A.markup.toFixed(1)}%`, dyn: dGp },
     { key: 'markup', icon: '🏷', label: 'Наценка магазина', value: A.markup.toFixed(1) + '%', sub: `по складу ${markupStock.toFixed(1)}% · маржа ${A.margin.toFixed(1)}%` },
-    { key: 'sales', icon: '🛒', label: 'Продажи', value: fmt(A.sold) + ' шт', sub: `средняя цена ${fmt(avgPrice, 2)} ₽` },
+    { key: 'sales', icon: '🛒', label: 'Продажи', value: fmt(A.sold) + ' шт', sub: `средняя цена ${fmt(avgPrice, 2)} ₽`, dyn: dSold },
     { key: 'stock', icon: '📦', label: 'Склад', value: fmt(A.stockSum) + ' ₽', sub: `${fmt(A.stock)} шт · оборачиваемость ${fmtDays(A.turnover)} дн.` },
     { key: 'dead', icon: '🧊', label: 'Мёртвый сток', value: fmt(A.deadSum) + ' ₽', sub: `${A.deadCount} SKU · ${deadPctSku.toFixed(1)}% SKU · ${deadPctStock.toFixed(1)}% склада`, cls: deadPctStock > 15 ? 'dk-alert' : '' },
     { key: 'turnover', icon: '🔄', label: 'Оборачиваемость', value: fmtDays(A.turnover) + ' дн.', sub: `скорость ${A.rate.toFixed(1)} шт/день`, cls: !isFinite(A.turnover) ? 'dk-alert' : '' },
+    { key: 'dyn', icon: '📅', label: 'Продажи по остаткам', value: fmt(salesSumQty) + ' шт', sub: `Δ остатков · ${scopeTxt}`, cls: 'dk-good' },
     { key: 'top100', icon: '🏆', label: 'Доля ТОП-100 в ТО', value: share + '%', sub: fmt(top100sum) + ' ₽', action: 'top100' },
     { key: 'problems', icon: '🚨', label: 'Проблемы', value: fmt(problems.length), sub: ISSUE_TYPES.map(t => `${t.icon}${problems.filter(p => p.type === t.key).length}`).join('  '), cls: problems.length ? 'dk-alert' : 'dk-good', action: 'issues' }
   ];
@@ -67,16 +128,25 @@ function renderDashboard() {
     : '<div class="alert-item alert-ok">🎉 Срочных проблем нет</div>';
 
   dashContent.innerHTML = `
+    <div class="hint" style="margin-bottom:6px">🗂 Накоплено в архиве: ${hs ? hs.count : 1} ${pluralDays(hs ? hs.count : 1)} · данные сохраняются автоматически и восстанавливаются при следующем запуске. Продажи «продано/ТО» — накопительные, остатки — снапшот на дату.</div>
+    ${seriesAll.length ? dashScopeHtml(seriesAll) : ''}
     <div class="dash-kpis">
       ${cards.map(c => `<div class="dash-kpi ${c.cls || ''}" ${c.action === 'issues' ? 'data-jump-issues="all"' : c.action === 'top100' ? 'data-jump-mode="top100"' : `data-dash-open="${c.key}"`}>
         <span class="dk-icon">${c.icon}</span>
         <div class="dk-label">${c.label}</div>
         <div class="dk-value">${c.value}</div>
         <div class="dk-sub">${c.sub}</div>
+        ${c.dyn != null ? dynBadge(c.dyn) : ''}
         ${c.action ? '' : '<div class="dk-open">детализация →</div>'}
       </div>`).join('')}
     </div>
     <div class="dash-grid">
+      <div class="dash-card" style="grid-column:1/-1"><h4>📅 Динамика по дням <span class="hint">(накопительные итоги на каждую дату загрузки · скоуп сверху)</span></h4>
+        ${scoped.length >= 2
+          ? '<div class="dash-chart" style="height:260px"><canvas id="dashDyn"></canvas></div><div class="hint">' + escapeHtml(scopeTxt) + '</div>'
+          : '<div class="alert-item alert-warn">Нужно минимум 2 разных даты отчётов в архиве — загрузите второй отчёт другим днём, и здесь появится динамика.</div>'}
+      </div>
+      <div class="dash-card"><h4>📉 Продажи из изменения остатков <span class="hint">(шт за промежуток между снимками)</span></h4><div class="dash-chart"><canvas id="dashC4"></canvas></div></div>
       <div class="dash-card"><h4>🥧 Доли групп в ТО <span class="hint">(клик по сегменту — открыть группу)</span></h4><div class="dash-chart"><canvas id="dashC1"></canvas></div></div>
       <div class="dash-card"><h4>📦 Состояние стока <span class="hint">(клик — список товаров сегмента)</span></h4><div class="dash-chart"><canvas id="dashC2"></canvas></div></div>
       <div class="dash-card"><h4>🚨 Проблемы по типам <span class="hint">(клик — открыть тип)</span></h4><div class="dash-chart"><canvas id="dashC3"></canvas></div></div>
@@ -97,6 +167,52 @@ function renderDashboard() {
 
   dashCharts.forEach(c => c.destroy()); dashCharts = [];
   if (typeof Chart === 'undefined') return;
+
+  const dlabels = scoped.map(p => p.date.slice(5).split('-').reverse().join('.'));
+  if (scoped.length >= 2) {
+    dashCharts.push(new Chart(document.getElementById('dashDyn'), {
+      type: 'line',
+      data: {
+        labels: dlabels,
+        datasets: [
+          { label: 'ТО нарастающим итогом, ₽', data: dm.map(x => x.to), borderColor: '#2563eb', backgroundColor: 'rgba(37,99,235,.08)', fill: true, tension: .3, pointRadius: 2, yAxisID: 'y' },
+          { label: 'ВП нарастающим итогом, ₽', data: dm.map(x => x.gp), borderColor: '#10b981', tension: .3, pointRadius: 2, fill: false, yAxisID: 'y' },
+          { label: 'Остаток по себестоимости, ₽', data: dm.map(x => x.stockSum), borderColor: '#f59e0b', borderDash: [5, 4], tension: .3, pointRadius: 2, fill: false, yAxisID: 'y' }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 10 } } } },
+        scales: { x: { grid: { display: false } }, y: { ticks: { callback: v => fmt(v) } } }
+      }
+    }));
+  } else if (scoped.length === 1) {
+    // один снимок в скоупе — рисуем одну точку вместо пустоты
+    const el = document.getElementById('dashDyn');
+    if (el) dashCharts.push(new Chart(el, {
+      type: 'bar',
+      data: { labels: dlabels, datasets: [{ label: 'ТО на эту дату, ₽', data: dm.map(x => x.to), backgroundColor: '#2563eb', borderRadius: 4 }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { grid: { display: false } }, y: { beginAtZero: true, ticks: { callback: v => fmt(v) } } } }
+    }));
+  }
+  if (scoped.length >= 2) {
+    dashCharts.push(new Chart(document.getElementById('dashC4'), {
+      type: 'bar',
+      data: {
+        labels: dlabels.slice(1),
+        datasets: [{ label: 'Продано шт (Δ остатка)', data: scoped.slice(1).map(p => p.salesQty), backgroundColor: '#6366f1', borderRadius: 4 }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => ` ${fmt(c.raw)} шт продано с предыдущего снимка` } } },
+        scales: { x: { grid: { display: false } }, y: { beginAtZero: true, ticks: { precision: 0 } } }
+      }
+    }));
+  } else {
+    const el = document.getElementById('dashC4');
+    if (el && el.parentElement) el.parentElement.innerHTML = '<div class="alert-item alert-warn" style="margin:8px 0">Загрузите отчёты минимум в два разных дня — появится динамика продаж по изменению остатков.</div>';
+  }
 
   const gSorted = byGroupAgg(rawData, 'группа 1').sort((a, b) => b.a.to - a.a.to);
   const gTop = gSorted.slice(0, 8);
@@ -216,7 +332,68 @@ function groupDrillTable(entries, totalTo, sortKey) {
     <div class="hint" style="margin-top:6px">Клик по группе — её карточка. Клик по заголовку — сортировка.</div>`;
 }
 
+// ── Детализация динамики: таблица по дням + TOP-Δ продавцов ──
+function openDynDrill() {
+  const seriesAll = snapshotsSeries();
+  const scoped = scopedSeries(seriesAll);
+  const dm = dailyMetricsSeries(scoped);
+  const fa = d => d.split('-').reverse().join('.');
+  const rows = dm.map((x, i) => {
+    const prev = i > 0 ? dm[i - 1] : null;
+    const dTo = prev && prev.to > 0 ? ((x.to - prev.to) / prev.to * 100) : null;
+    return `<tr>
+      <td><b>${fa(x.date)}</b></td>
+      <td>${fmt(x.to)} ₽</td>
+      <td>${dTo == null ? '—' : (dTo >= 0 ? '+' : '−') + Math.abs(dTo).toFixed(1) + '%'}</td>
+      <td>${fmt(x.gp)} ₽</td>
+      <td>${fmt(x.sold)} шт</td>
+      <td>${i > 0 ? fmt(x.salesQty) + ' шт' : '—'}</td>
+      <td>${fmt(x.stock)} шт</td>
+      <td>${fmt(x.stockSum)} ₽</td>
+      <td>${fmt(x.sku)}</td>
+    </tr>`;
+  }).join('');
+  // TOP продавцов по Δ остатка внутри скоупа
+  const deltas = [];
+  const keysScoped = scoped.map(p => p.date);
+  for (let i = 1; i < keysScoped.length; i++) {
+    const dayPrev = historyStore.days[keysScoped[i - 1]].rows;
+    const dayCur = historyStore.days[keysScoped[i]].rows;
+    for (const code in dayCur) {
+      const r = dayCur[code];
+      const prev = dayPrev[code];
+      if (!prev) continue;
+      const d = num(desVal(prev['склад кол'])) - num(desVal(r['склад кол']));
+      if (d <= 0) continue;
+      let e = deltas.find(x => x.code === code);
+      if (!e) { e = { code, name: String(desVal(r['товар']) || ''), d: 0 }; deltas.push(e); }
+      e.d += d;
+    }
+  }
+  deltas.sort((a, b) => b.d - a.d);
+  const topRows = deltas.slice(0, 50).map(e => `<tr>
+    <td><span class="link-cell" data-open-product data-code="${escapeHtml(e.code)}">${escapeHtml(e.code)}</span></td>
+    <td class="truncate" data-full="${escapeHtml(e.name)}"><span class="link-cell" data-open-product data-code="${escapeHtml(e.code)}">${escapeHtml(truncateStr(e.name, 60))}</span></td>
+    <td><b>${fmt(e.d)} шт</b></td>
+    <td><button type="button" class="icon-btn" data-dyn-item="${escapeHtml(e.code)}">📈 график</button></td>
+  </tr>`).join('');
+  drillShell('📅 Динамика продаж и остатков по дням', escapeHtml(scopeLabel(scoped, seriesAll)),
+    tileHtml('ТО на конец периода', dm.length ? fmt(dm[dm.length - 1].to) + ' ₽' : '—', 'kpi-accent', 'накопительно') +
+    tileHtml('ВП на конец периода', dm.length ? fmt(dm[dm.length - 1].gp) + ' ₽' : '') +
+    tileHtml('Продано (Δ остатков)', fmt(scoped.reduce((s, p) => s + p.salesQty, 0)) + ' шт', '', 'за выбранный период') +
+    tileHtml('Остаток сейчас', dm.length ? fmt(dm[dm.length - 1].stock) + ' шт' : '—'),
+    `<h4>По дням <span class="hint">(ТО/ВП/Продано — накопительные итоги на дату; «вышло из остатков» — продажи между снимками)</span></h4>
+     <div class="zone-scroll" style="max-height:38vh"><table class="mini-table sortable" style="margin-top:0">
+       <thead><tr><th>Дата</th><th>ТО нар.</th><th>Δ ТО %</th><th>ВП нар.</th><th>Продано нар.</th><th>Вышло из остатков</th><th>Остаток шт</th><th>Остаток ₽</th><th>SKU</th></tr></thead>
+       <tbody>${rows || '<tr><td colspan=9>Нет данных в выбранном периоде</td></tr>'}</tbody></table></div>
+     <h4>TOP-50 товаров по продажам из изменения остатков</h4>
+     <div class="zone-scroll" style="max-height:38vh"><table class="mini-table" style="margin-top:0">
+       <thead><tr><th>Код</th><th>Товар</th><th>Продало шт</th><th></th></tr></thead>
+       <tbody>${topRows || '<tr><td colspan=4>Нужно минимум два снимка в архиве</td></tr>'}</tbody></table></div>`, null);
+}
+
 function openDashDrill(key) {
+  if (key === 'dyn') { openDynDrill(); return; }
   const A = aggRows(rawData);
   const groups = byGroupAgg(rawData, 'группа 1');
 

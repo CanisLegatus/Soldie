@@ -13,7 +13,7 @@
   host.appendChild(container);
   
   // Render HTML structure with drag-drop handlers
-  container.innerHTML = '<header>\n  <div class="wrap hbar">\n    <div class="logo">V</div>\n    <div><h1>Vision</h1><small>дашборд директора магазина · август 2026</small></div>\n    <div class="hspace">\n      <span class="fchip" id="ch2"><span class="dot"></span><span id="ch2t">Статистика — не загружена</span></span>\n      <span class="fchip" id="ch1"><span class="dot"></span><span id="ch1t">План-факт — не загружен</span></span>\n      <button class="btn" data-vision-file="2">⬆ Статистика</button>\n      <button class="btn" data-vision-file="1">⬆ План-факт</button>\n    </div>\n  </div>\n</header>\n\n<section id="hero">\n  <div class="wrap">\n    <div class="lead">\n      <h2><em>Vision</em> — весь магазин на одном экране</h2>\n      <p>Загрузите «Статистику расширенную» (обязательно) и «Рейтинг / план-факт» (прогнозы, дневная динамика, ассортимент). Каждый показатель кликабелен — внутри драйвер-дерево: за счёт чего магазин растёт или отстаёт.</p>\n    </div>\n    <div class="drops">\n      <div class="drop" id="d2" onclick="pickFile(2)" ondragover="event.preventDefault();this.style.borderColor=\'#155EEF\';" ondragleave="this.style.borderColor=\'\';" ondrop="event.preventDefault();this.style.borderColor=\'\';if(event.dataTransfer.files&&event.dataTransfer.files[0]){loadWorkbook(2,event.dataTransfer.files[0]);}">\n        <h3>📗 Файл 2 · Статистика (расширенная) ГМ</h3>\n        <p>Вкладка «статистика расширенная»: ТО, ВП, наценка, чеки, средний чек, м², остатки, SKU — план/факт и прошлый год.</p>\n        <div class="st" id="dst2"></div>\n      </div>\n      <div class="drop" id="d1" onclick="pickFile(1)" ondragover="event.preventDefault();this.style.borderColor=\'#155EEF\';" ondragleave="this.style.borderColor=\'\';" ondrop="event.preventDefault();this.style.borderColor=\'\';if(event.dataTransfer.files&&event.dataTransfer.files[0]){loadWorkbook(1,event.dataTransfer.files[0]);}">\n        <h3>📘 Файл 1 · Рейтинг и план-факт</h3>\n        <p>Прогнозы, прирост МТМ, LFL, дневные план/факт/прогноз по ТО и чекам, продажи по товарным группам.</p>\n        <div class="st" id="dst1"></div>\n      </div>\n    </div>\n  </div>\n</section>\n\n<main id="app" class="wrap hidden">\n  <div class="cbar">\n    <div class="field"><label>Поиск магазина</label><input id="storeQ" placeholder="Начните вводить…" style="width:220px"/></div>\n    <div class="field"><label>Магазин</label><select id="storeSel"></select></div>\n    <div class="field"><label>Сравнивать с</label>\n      <select id="mode">\n        <option value="net">Вся сеть</option>\n        <option value="fo">Мой федеральный округ</option>\n        <option value="reg">Мой регион</option>\n        <option value="lfl">Моя LFL-группа</option>\n        <option value="sim">Похожие магазины</option>\n        <option value="custom">Произвольная выборка</option>\n      </select>\n    </div>\n    <div class="field"><label>Выборка</label><button class="btn" id="customBtn">🎯 <span id="customLbl">Собрать выборку</span></button></div>\n    <div class="tags" id="tags"></div>\n  </div>\n  <div class="tabs" id="tabs"></div>\n  <section id="view"></section>\n</main>\n\n<div class="modal" id="customM">\n  <div class="mbox">\n    <div class="mhead"><h3>Произвольная выборка для сравнения</h3><button class="btn" id="mclose">✕</button></div>\n    <div class="mbody">\n      <input id="msearch" placeholder="Поиск по названию, региону, округу…"/>\n      <div class="mlist" id="mlist"></div>\n    </div>\n    <div class="mfoot">\n      <span class="cnt" id="mcnt"></span>\n      <div style="display:flex;gap:8px">\n        <button class="btn" id="mclear">Очистить</button>\n        <button class="btn" id="mapply" style="background:var(--acc);border-color:var(--acc);color:#fff">Применить</button>\n      </div>\n    </div>\n  </div>\n</div>\n\n<div class="modal" id="drillM">\n  <div class="mbox wide">\n    <div class="mhead"><h3 id="drillTitle">Анализ показателя</h3><button class="btn" id="drillClose">✕</button></div>\n    <div class="mbody" id="drillBody"></div>\n  </div>\n</div>\n\n<div id="busy"><div class="spin"></div><div class="bt" id="busyT">Читаю файл…</div></div>\n<div id="statusline">Готов к загрузке файлов</div>\n<footer>Vision · данные читаются локально в браузере · кликните на любую карточку или показатель, чтобы увидеть драйвер-анализ</footer>\n\n<input type="file" id="f1" accept=".xlsx,.xls" style="position:fixed;top:-100px;left:-100px;width:1px;height:1px;opacity:0" onchange="onFilePicked(1,this)"/>\n<input type="file" id="f2" accept=".xlsx,.xls" style="position:fixed;top:-100px;left:-100px;width:1px;height:1px;opacity:0" onchange="onFilePicked(2,this)"/>\n\n';
+  container.innerHTML = '<header>\n  <div class="wrap hbar">\n    <div class="logo">V</div>\n    <div><h1>Vision</h1><small>дашборд директора магазина · август 2026</small></div>\n    <div class="hspace">\n      <span class="fchip" id="ch2"><span class="dot"></span><span id="ch2t">Статистика — не загружена</span></span>\n      <span class="fchip" id="ch1"><span class="dot"></span><span id="ch1t">План-факт — не загружен</span></span>\n      <button class="btn" data-vision-file="2">⬆ Статистика</button>\n      <button class="btn" data-vision-file="1">⬆ План-факт</button>\n    </div>\n  </div>\n</header>\n\n<section id="hero">\n  <div class="wrap">\n    <div class="lead">\n      <h2><em>Vision</em> — весь магазин на одном экране</h2>\n      <p>Загрузите «Статистику расширенную» (обязательно) и «Рейтинг / план-факт» (прогнозы, дневная динамика, ассортимент). Каждый показатель кликабелен — внутри драйвер-дерево: за счёт чего магазин растёт или отстаёт.</p>\n    </div>\n    <div class="drops">\n      <div class="drop" id="d2" onclick="pickFile(2)" ondragover="event.preventDefault();this.style.borderColor=\'#155EEF\';" ondragleave="this.style.borderColor=\'\';" ondrop="event.preventDefault();this.style.borderColor=\'\';if(event.dataTransfer.files&&event.dataTransfer.files[0]){loadWorkbook(2,event.dataTransfer.files[0]);}">\n        <h3>📗 Файл 2 · Статистика (расширенная) ГМ</h3>\n        <p>Вкладка «статистика расширенная»: ТО, ВП, наценка, чеки, средний чек, м², остатки, SKU — план/факт и прошлый год.</p>\n        <div class="st" id="dst2"></div>\n      </div>\n      <div class="drop" id="d1" onclick="pickFile(1)" ondragover="event.preventDefault();this.style.borderColor=\'#155EEF\';" ondragleave="this.style.borderColor=\'\';" ondrop="event.preventDefault();this.style.borderColor=\'\';if(event.dataTransfer.files&&event.dataTransfer.files[0]){loadWorkbook(1,event.dataTransfer.files[0]);}">\n        <h3>📘 Файл 1 · Рейтинг и план-факт</h3>\n        <p>Прогнозы, прирост МТМ, LFL, дневные план/факт/прогноз по ТО и чекам, продажи по товарным группам.</p>\n        <div class="st" id="dst1"></div>\n      </div>\n    </div>\n  </div>\n</section>\n\n<main id="app" class="wrap hidden">\n  <div class="cbar">\n    <div class="field"><label>Поиск магазина</label><input id="storeQ" placeholder="Начните вводить…" style="width:220px"/></div>\n    <div class="field"><label>Магазин</label><select id="storeSel"></select></div>\n    <div class="field"><label>Сравнивать с</label>\n      <select id="mode">\n        <option value="net">Вся сеть</option>\n        <option value="fo">Мой федеральный округ</option>\n        <option value="reg">Мой регион</option>\n        <option value="lfl">Моя LFL-группа</option>\n        <option value="sim">Похожие магазины</option>\n        <option value="custom">Произвольная выборка</option>\n      </select>\n    </div>\n    <div class="field"><label>Выборка</label><button class="btn" id="customBtn">🎯 <span id="customLbl">Собрать выборку</span></button></div>\n    <div class="tags" id="tags"></div>\n  </div>\n  <div class="tabs" id="tabs"></div>\n  <section id="view"></section>\n</main>\n\n<div class="modal" id="customM">\n  <div class="mbox">\n    <div class="mhead"><h3>Произвольная выборка для сравнения</h3><button class="btn" id="mclose">✕</button></div>\n    <div class="mbody">\n      <input id="msearch" placeholder="Поиск по названию, региону, округу…"/>\n      <div class="mlist" id="mlist"></div>\n    </div>\n    <div class="mfoot">\n      <span class="cnt" id="mcnt"></span>\n      <div style="display:flex;gap:8px">\n        <button class="btn" id="mclear">Очистить</button>\n        <button class="btn" id="mapply" style="background:var(--acc);border-color:var(--acc);color:#fff">Применить</button>\n      </div>\n    </div>\n  </div>\n</div>\n\n<div class="modal" id="drillM">\n  <div class="mbox wide">\n    <div class="mhead"><h3 id="drillTitle">Анализ показателя</h3><button class="btn" id="drillClose">✕</button></div>\n    <div class="mbody" id="drillBody"></div>\n  </div>\n</div>\n\n<div id="busy"><div class="spin"></div><div class="bt" id="busyT">Читаю файл…</div></div>\n<div id="statusline">Готов к загрузке файлов</div>\n<footer>Vision · данные читаются локально в браузере · кликните на любую карточку или показатель, чтобы увидеть драйвер-анализ</footer>\n\n<input type="file" id="f1" accept=".xlsx,.xls" style="position:fixed;top:-100px;left:-100px;width:1px;height:1px;opacity:0" onchange="onFilePicked(1,this)"/>\n<input type="file" id="f2" accept=".xlsx,.xls" style="position:fixed;top:-100px;left:-100px;width:1px;height:1px;opacity:0" onchange="onFilePicked(2,this)"/>\n\n<div class="modal" id="vItemM">\n  <div class="mbox wide">\n    <div class="mhead"><h3 id="vItemTitle">Динамика товарной группы</h3><button class="btn" id="vItemClose">✕</button></div>\n    <div class="mbody" id="vItemBody"></div>\n  </div>\n</div>\n\n';
   
   var doc = document;
   var mainDoc = document;
@@ -477,6 +477,264 @@ function parseFile1(wb){
   F1.loaded=true;
 }
 
+// ══ Интеграция с накопленным архивом приложения (storage.js) ══
+// Дневная динамика Vision строится из истории отчётов «Уценка»: каждый снимок
+// даёт фактические ТО/чеки за день (разность накопительных итогов). Остальные
+// месячные метрики берутся из загруженного файла статистики.
+function vExcelDateToIso(v){
+  if(v==null||v===''){return null;}
+  var t=(typeof v==='string')?v.trim():String(v);
+  if(/^\d{4}-\d{2}-\d{2}/.test(t)){return t.slice(0,10);}
+  if(/^\d{2}[.\/]\d{2}[.\/]\d{4}$/.test(t)){var p=t.split(/[.\/]/);return p[2]+'-'+p[1]+'-'+p[0];}
+  if(/^-?\d+(\.\d+)?$/.test(t)){
+    var n=parseFloat(t);
+    if(n>25000&&n<60000){ // дата Excel (1900): 25569 = 01.01.1970
+      var d=new Date(Math.round((n-25569)*86400000));
+      return d.getUTCFullYear()+'-'+('0'+(d.getUTCMonth()+1)).slice(-2)+'-'+('0'+d.getUTCDate()).slice(-2);
+    }
+  }
+  return null;
+}
+function visionArchDates(){
+  if(typeof dayKeysSorted!=='function'){return [];}
+  return dayKeysSorted();
+}
+function visionArchWide(){
+  var dates=visionArchDates();
+  if(!dates.length){return null;}
+  var hist=(typeof visionHistLoad==='function')?visionHistLoad():{};
+  var idx={},i;
+  for(i=0;i<dates.length;i++){idx[dates[i]]=i;}
+  function blank(){var a=[];for(var z=0;z<dates.length;z++){a.push(null);}return a;}
+  var to={},chk={};
+  // 1) сначала старые снимки из localStorage — их дневных разностей больше нигде нет
+  var hk=Object.keys(hist);
+  for(var h=0;h<hk.length;h++){
+    var snap=hist[hk[h]];
+    if(!snap||!snap.dates){continue;}
+    ['to','chk'].forEach(function(kind){
+      var src=snap[kind];if(!src){return;}
+      var sk=Object.keys(src);
+      for(var s2=0;s2<sk.length;s2++){
+        var nm=norm(sk[s2]),rec=src[sk[s2]];
+        var tgt=(kind==='to')?to:chk;
+        if(!tgt[nm]){tgt[nm]={coef:null,plan:blank(),fact:blank(),prog:blank(),ful:blank()};}
+        var o=tgt[nm];
+        if(rec.coef!=null){o.coef=rec.coef;}
+        for(var d2=0;d2<snap.dates.length;d2++){
+          var pos=idx[snap.dates[d2]];
+          if(pos==null){continue;}
+          ['plan','fact','prog','ful'].forEach(function(f){
+            var val=rec[f]?rec[f][d2]:null;
+            if(val!=null){o[f][pos]=val;}
+          });
+        }
+      }
+    });
+  }
+  // 2) затем архив отчётов: факт ТО = разность накопительных итогов соседних снимков
+  var prev=null;
+  for(i=0;i<dates.length;i++){
+    var rows=historyStore.days[dates[i]].rows,c;
+    var byName={},nameByNorm={};
+    Object.keys(rows).forEach(function(code){
+      var r=rows[code];
+      var raw=String(r['магазин']||'').replace(/\s+/g,' ').trim();
+      if(!raw){return;}
+      var iso=vExcelDateToIso(r['дата']);
+      if(iso&&iso!==dates[i]){return;} // снимок содержит строки других дат — пропускаем
+      var nm=norm(raw);
+      if(nameByNorm[nm]===code){return;} // дубль артикула того же магазина
+      nameByNorm[nm]=code;
+      var b=byName[nm];
+      if(!b){b={to:0,qty:0};byName[nm]=b;}
+      b.to+=num(r['то, руб'])||0;
+      b.qty+=num(r['продано (шт)'])||0;
+    });
+    Object.keys(byName).forEach(function(nm2){
+      var b=byName[nm2];
+      if(!to[nm2]){to[nm2]={coef:null,plan:blank(),fact:blank(),prog:blank(),ful:blank()};}
+      if(!chk[nm2]){chk[nm2]={coef:null,plan:blank(),fact:blank(),prog:blank(),ful:blank()};}
+      if(prev&&prev[nm2]!=null){
+        var toTh=(b.to-prev[nm2].to)/1000;
+        var qtyDelta=b.qty-prev[nm2].qty;
+        to[nm2].fact[i]=(isFinite(toTh)&&toTh>=0)?toTh:null;
+        // «чеки» из отчёта недоступны → fact для трафика не заполняем,
+        // иначе чарт «Чеки по дням» покажет штуки под подписью «чеки»
+        chk[nm2].fact[i]=null;
+        void qtyDelta;
+      }
+    });
+    prev={};
+    Object.keys(byName).forEach(function(nm3){prev[nm3]={to:byName[nm3].to,qty:byName[nm3].qty};});
+  }
+  var any=false;
+  Object.keys(to).forEach(function(k){if(to[k].fact.some(function(v){return v!=null;})){any=true;}});
+  if(!any){return null;}
+  return {dates:dates,to:to,chk:chk};
+}
+// Объединённый широкий лист: архив отчётов + снимки plan/fact/prog из localStorage
+function visionMergedWide(){
+  var arch=visionArchWide();
+  var merged=visionHistMerge(arch);
+  if(!merged||!merged.dates||!merged.dates.length){return null;}
+  // сортировка шкалы дат и перенос значений в новом порядке
+  var order=merged.dates.map(function(d,i){return [d,i];}).sort(function(a,b){return a[0]<b[0]?-1:a[0]>b[0]?1:0;});
+  var sortedDates=order.map(function(x){return x[0];});
+  function remap(o){
+    var res={};
+    Object.keys(o).forEach(function(nm){
+      var rec=o[nm],nr={coef:rec.coef,plan:[],fact:[],prog:[],ful:[]};
+      order.forEach(function(x){
+        var oldI=x[1];
+        ['plan','fact','prog','ful'].forEach(function(f){nr[f].push(rec[f]?rec[f][oldI]:null);});
+      });
+      res[nm]=nr;
+    });
+    return res;
+  }
+  return {dates:sortedDates,to:remap(merged.to||{}),chk:remap(merged.chk||{})};
+}
+function visionApplyHistory(){
+  if(typeof historyStore==='undefined'||!historyStore.count){return;}
+  var wide=visionMergedWide();
+  if(!wide){return;}
+  var i,ks;
+  ks=Object.keys(wide.to);
+  for(i=0;i<ks.length;i++){
+    var r=wide.to[ks[i]];
+    if(r.fact.some(function(v){return v!=null;})){F1.dailyTO[ks[i]]={dates:wide.dates,coef:r.coef,plan:r,prog:r,fact:r,ful:r};}
+  }
+  ks=Object.keys(wide.chk);
+  for(i=0;i<ks.length;i++){
+    var r2=wide.chk[ks[i]];
+    if(r2.fact.some(function(v){return v!=null;})){F1.dailyChk[ks[i]]={dates:wide.dates,coef:r2.coef,plan:r2,prog:r2,fact:r2,ful:r2};}
+  }
+  F1.loaded=true;
+}
+function visionSnapshotFromArchive(){
+  try{
+    if(typeof historyStore==='undefined'||!historyStore.count){return;}
+    var hs=historySummary();
+    if(hs&&hs.lastRows){
+      visionHistStore(visionArchWideForDay(hs.lastKey));
+    }
+  }catch(e){if(window.console){window.console.warn('vision snapshot',e);}}
+}
+function visionArchWideForDay(dayKey){
+  // снимок одного дня из архива: фактические дневные значения (разность с предыдущим)
+  var dates=visionArchDates();
+  var i=dates.indexOf(dayKey);
+  if(i<0){return null;}
+  var wide=visionArchWide();
+  if(!wide){return null;}
+  var win=wide.dates.slice(Math.max(0,i-30),i+1);
+  function sliceKind(o){
+    var res={};
+    Object.keys(o).forEach(function(nm){
+      var rec=o[nm],nr={coef:rec.coef,plan:[],fact:[],prog:[],ful:[]};
+      for(var k=Math.max(0,i-30);k<=i;k++){
+        ['plan','fact','prog','ful'].forEach(function(f){nr[f].push(rec[f]?rec[f][k]:null);});
+      }
+      res[nm]=nr;
+    });
+    return res;
+  }
+  return {dates:win,to:sliceKind(wide.to),chk:sliceKind(wide.chk)};
+}
+function visionScopedDates(){
+  var all=F1.dates?F1.dates.slice():[];
+  if(!all.length){return all;}
+  if(typeof scopedDates==='function'){
+    var iso=all.map(function(d){return d.slice(0,10);});
+    var kept=scopedDates(iso);
+    var keepSet={};kept.forEach(function(d){keepSet[d]=1;});
+    return all.filter(function(d){return keepSet[d.slice(0,10)];});
+  }
+  return all;
+}
+function visionScopeBarHtml(){
+  if(typeof scopeBarHtml!=='function'||typeof historyStore==='undefined'||!historyStore.count){return '';}
+  var dates=visionArchDates();
+  if(!dates.length){return '';}
+  return scopeBarHtml({id:'visionScopeBar',cls:'tab',activeCls:'on',chipAttr:'vscope',
+    label:'📅 Период динамики:',minD:dates[0],maxD:dates[dates.length-1]});
+}
+function bindVisionScopeBar(){
+  if(typeof bindScopeBar!=='function'){return;}
+  bindScopeBar('visionScopeBar','vscope',function(){
+    visionRebuildDaily();
+    refresh();
+  });
+}
+function visionRebuildDaily(){
+  if(typeof historyStore==='undefined'||!historyStore.count){return;}
+  F1.dailyTO={};F1.dailyChk={};
+  visionApplyHistory();
+}
+// Дневная динамика товарной группы из архива: продажи ≈ Δ остатков × цена
+function visionGroupDaily(group){
+  var out={dates:[],sales:[],stock:[]};
+  if(typeof dayKeysSorted!=='function'||typeof historyStore==='undefined'){return out;}
+  var keys=dayKeysSorted();
+  var g=norm(group);
+  var prevMap=null;
+  for(var j=0;j<keys.length;j++){
+    var rowsJ=historyStore.days[keys[j]].rows;
+    var curMap={},prices={},have=false;
+    for(var c2 in rowsJ){
+      var rj=rowsJ[c2];
+      if(norm(rj['группа 1'])!==g){continue;}
+      have=true;
+      curMap[c2]=num(rj['склад кол'])||0;
+      prices[c2]=num(rj['цена маг, руб.'])||0;
+    }
+    if(!have){prevMap=null;continue;}
+    var soldVal=0,sumStock=0;
+    Object.keys(curMap).forEach(function(cd){
+      sumStock+=curMap[cd]*prices[cd];
+      if(prevMap){
+        var pv=prevMap[cd];
+        if(pv!=null&&pv>curMap[cd]){soldVal+=(pv-curMap[cd])*prices[cd];}
+      }
+    });
+    out.dates.push(keys[j]);
+    out.stock.push(sumStock/1000); // тыс ₽ по ценам магазина
+    out.sales.push(prevMap?soldVal/1000:null); // null для первого снимка группы
+    prevMap=curMap;
+  }
+  return out;
+}
+function openVisionGroupDrill(group){
+  var body=$('vItemBody');
+  if(!body){return;}
+  $('vItemTitle').textContent='📦 '+group+' — динамика из архива отчётов';
+  var gd=visionGroupDaily(group);
+  var hasSales=gd.sales.some(function(v){return v!=null&&v>0;});
+  if(!gd.dates.length){
+    body.innerHTML='<div class="nodata">В архиве отчётов нет данных по этой группе. Загрузите отчёт «Уценка» — история накапливается автоматически.</div>';
+    $('vItemM').classList.add('open');
+    return;
+  }
+  body.innerHTML='<div class="sub" style="margin-bottom:10px">Остаток группы — ₽ по ценам магазина на дату снимка · Продажи — оценка Δ остатков × цена (тыс ₽). Источник: накопленный архив отчётов приложения.</div>'
+    +'<div class="chartbox tall"><canvas id="c_vitem"></canvas></div>';
+  if(HAS_CHART){
+    mkChart('c_vitem',{
+      type:'bar',
+      data:{labels:gd.dates.map(function(d){return d.slice(5).split('-').reverse().join('.');}),datasets:[
+        {label:'Продажи, тыс ₽ (оценка)',data:hasSales?gd.sales:[],backgroundColor:'#12B76A',borderRadius:5,yAxisID:'y'},
+        {label:'Остаток, тыс ₽ (цены магазина)',type:'line',data:gd.stock,borderColor:'#155EEF',tension:.3,pointRadius:2,borderWidth:2,yAxisID:'y2',fill:false}
+      ]},
+      options:{maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+        plugins:{legend:{position:'bottom',labels:{usePointStyle:true,boxWidth:8}},tooltip:{callbacks:{label:function(c){return ' '+c.dataset.label+': '+fmt(c.raw);}}}},
+        scales:{x:{grid:{display:false}},y:{beginAtZero:true,grid:{color:'rgba(16,24,40,.05)'},ticks:{callback:function(v){return fmt(v);}}},
+                 y2:{position:'right',grid:{drawOnChartArea:false},ticks:{callback:function(v){return fmt(v);}}}}}
+    });
+  }
+  $('vItemM').classList.add('open');
+}
+function closeVisionItem(){$('vItemM').classList.remove('open');}
+
 function aggregate(L){
   if(!L||!L.length){return null;}
   var n=L.length,q;
@@ -845,12 +1103,58 @@ var SPEC_M2=[['toPerM2','ТО на м² в день'],['toPerM225','ТО на м
  ['stock','Остатки по себестоимости'],['turnDays','Оборачиваемость остатков'],['sku','Остаток SKU'],['skuPerM2','SKU на м²'],
  ['fillTrade','Наполнение торг. зала'],['fillTotal','Наполнение общ. площади']];
 
+// ── Скоуп динамики VISION: 3 / 7 / 14 / 30 дней, всё, произвольно ──
+var vScopeDays = 7;      // 0 = всё, -1 = произвольный диапазон
+var vScopeFrom = '';
+var vScopeTo = '';
+function visionScopedDates() {
+  var all = F1.dates.slice();
+  if (vScopeDays === -1) return all.filter(function(d){ return (!vScopeFrom || d >= vScopeFrom) && (!vScopeTo || d <= vScopeTo); });
+  if (vScopeDays > 0) return all.slice(Math.max(0, all.length - vScopeDays));
+  return all;
+}
+function bindVisionScopeBar(root) {
+  var bar = root.querySelector('#vScopeBar');
+  if (!bar || bar.dataset.bound) return;
+  bar.dataset.bound = '1';
+  bar.addEventListener('click', function(e){
+    var chip = e.target.closest('[data-vscope]');
+    if (!chip) return;
+    vScopeDays = +chip.getAttribute('data-vscope');
+    if (vScopeDays !== -1) { vScopeFrom = ''; vScopeTo = ''; }
+    refresh();
+  });
+  var fEl = bar.querySelector('#vScopeFrom'), tEl = bar.querySelector('#vScopeTo');
+  var apply = function(){
+    vScopeFrom = fEl.value; vScopeTo = tEl.value; vScopeDays = -1;
+    refresh();
+  };
+  fEl.addEventListener('change', apply);
+  tEl.addEventListener('change', apply);
+}
+function visionScopeHtml() {
+  var all = F1.dates;
+  if (!all.length) return '';
+  var opts = [[3,'3 дня'],[7,'7 дней'],[14,'14 дней'],[30,'30 дней'],[0,'всё']];
+  var chips = opts.map(function(o){
+    return '<button class="tab'+(vScopeDays===o[0]?' on':'')+'" data-vscope="'+o[0]+'">'+o[1]+'</button>';
+  }).join('');
+  var cust = '<button class="tab'+(vScopeDays===-1?' on':'')+'" data-vscope="-1">произвольно</button>'
+    +'<input type="date" id="vScopeFrom" value="'+esc(vScopeDays===-1?vScopeFrom:'')+'" min="'+all[0]+'" max="'+all[all.length-1]+'"/>'
+    +'<span class="mut">—</span>'
+    +'<input type="date" id="vScopeTo" value="'+esc(vScopeDays===-1?vScopeTo:'')+'" min="'+all[0]+'" max="'+all[all.length-1]+'"/>';
+  return '<div id="vScopeBar" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:12px">'
+    +'<span class="mut" style="font-weight:700;font-size:11.5px;text-transform:uppercase;letter-spacing:.05em">Период:</span>'
+    +chips+cust+'</div>';
+}
+
 function renderOverview(){
   var st=selS();
   var AB=aggregate(activeList());
   var netA=aggregate(ST.stores);
   var dTO_=F1.dailyTO[norm(st.name)];
   var h='<div class="pagehead"><h2>Обзор: как идёт магазин</h2><p>Все ключевые показатели · клик по карточке или строке — драйвер-анализ «за счёт чего»</p></div>';
+  h+=visionScopeHtml();
   h+=posStrip([['to','Товарооборот'],['vp','Валовая прибыль'],['markup','Наценка'],['checks','Чеки'],['avgCheck','Средний чек'],['toPerM2','ТО на м²']]);
   var k='';
   k+=kpiCard('Товарооборот','to',fmtM(st.to),[chip(st.to,AB?AB.to:null,1),'<span class="pill b">план '+fmt(st.planTO,0)+'</span>','к 2025 '+sgnTxt(st.growthTO,null)],{v:st.fulTO||0,c:fulColor(st.fulTO)});
@@ -1068,6 +1372,73 @@ function mkChart(id,cfg){
   if(CH[id]){try{CH[id].destroy();}catch(e){}}
   try{CH[id]=new Chart(el,cfg);return CH[id];}
   catch(err){if(window.console){window.console.warn('chart fail',id,err);}return null;}
+}
+// ── Накопительный архив Vision: история снимков широкого листа по датам ──
+var VISION_HIST_KEY='galamart_vision_history_v1';
+var VISION_HIST_LIMIT=60;
+function visionHistLoad(){
+  try{var o=JSON.parse(localStorage.getItem(VISION_HIST_KEY)||'{}');return (o&&typeof o==='object')?o:{};}
+  catch(e){return {};}
+}
+function visionHistSave(o){
+  try{localStorage.setItem(VISION_HIST_KEY,JSON.stringify(o));return true;}
+  catch(e){if(window.console){window.console.warn('vision history save failed',e);}stat('⚠️ Хранилище переполнено — история Vision не сохранена',true);return false;}
+}
+// Сохраняем широкий лист как снимок на его конечную дату; старые даты не теряются.
+function visionHistStore(wide){
+  if(!wide||!wide.dates||!wide.dates.length){return;}
+  var hist=visionHistLoad();
+  var lastD=wide.dates[wide.dates.length-1];
+  var dayKey=lastD.slice(0,10); // 'YYYY-MM-DD' из dlab (может иметь ' HH:mm')
+  hist[dayKey]={dates:wide.dates,to:wide.to,chk:wide.chk,savedAt:Date.now()};
+  var keys=Object.keys(hist).sort();
+  while(keys.length>VISION_HIST_LIMIT){delete hist[keys.shift()];}
+  visionHistSave(hist);
+}
+// Склейка накопленного: по каждому магазину и типу (to/chk) объединяем
+// значения по всем известным датам; свежий снимок перезаписывает свою дату.
+function visionHistMerge(curWide){
+  var hist=visionHistLoad();
+  var keys=Object.keys(hist).sort();
+  if(curWide){keys.push(curWide.dates[curWide.dates.length-1].slice(0,10));}
+  // полная шкала дат = union всех снимков (сортировка лексикографическая = хронологическая)
+  var dateSet={};
+  for(var i=0;i<keys.length;i++){
+    var snap=(curWide&&keys[i]===curWide.dates[curWide.dates.length-1].slice(0,10))?curWide:hist[keys[i]];
+    if(!snap||!snap.dates){continue;}
+    for(var j=0;j<snap.dates.length;j++){dateSet[snap.dates[j]]=1;}
+  }
+  var allDates=Object.keys(dateSet).sort();
+  if(allDates.length<= (curWide?curWide.dates.length:0)){return curWide;} // ничего не добавилось
+  var idx={};
+  for(var q=0;q<allDates.length;q++){idx[allDates[q]]=q;}
+  function mergeKind(kind){
+    var out={};
+    for(var s=0;s<keys.length;s++){
+      var snap=(curWide&&keys[s]===curWide.dates[curWide.dates.length-1].slice(0,10))?curWide:hist[keys[s]];
+      if(!snap||!snap[kind]){continue;}
+      var sk=Object.keys(snap[kind]);
+      for(var t=0;t<sk.length;t++){
+        var nm=sk[t],rec=snap[kind][nm];
+        if(!out[nm]){
+          var arr=[];for(var z=0;z<allDates.length;z++){arr.push(null);}
+          out[nm]={coef:rec.coef,plan:arr.slice(),fact:arr.slice(),prog:arr.slice(),ful:arr.slice()};
+        }
+        if(rec.coef!=null){out[nm].coef=rec.coef;}
+        ['plan','fact','prog','ful'].forEach(function(f){
+          for(var d2=0;d2<rec.dates.length;d2++){
+            var pos=idx[rec.dates[d2]];
+            if(pos!=null){out[nm][f][pos]=rec[f]?rec[f][d2]:null;}
+          }
+        });
+      }
+    }
+    return out;
+  }
+  return {dates:allDates,to:mergeKind('to'),chk:mergeKind('chk')};
+}
+function visionHistClear(){
+  try{localStorage.removeItem(VISION_HIST_KEY);}catch(e){}
 }
 function areaGrad(color){
   return function(ctx){

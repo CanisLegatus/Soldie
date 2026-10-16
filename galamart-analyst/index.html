@@ -444,6 +444,14 @@
     </div>
 
     <div id="status" class="status"></div>
+
+    <div class="chip-row" style="margin:10px 0 0">
+      <span class="chip" id="historyChip" title="Накопленный архив отчётов">🗂 Архив пуст</span>
+      <button type="button" class="chip" id="exportHistoryBtn" title="Сохранить весь накопленный архив в JSON-файл">💾 Экспорт истории (JSON)</button>
+      <button type="button" class="chip" id="importHistoryBtn" title="Дополнить архив из ранее сохранённого JSON-файла">📂 Импорт истории</button>
+      <button type="button" class="chip" id="clearHistoryBtn" title="Удалить весь накопленный архив">🗑 Очистить архив</button>
+      <input type="file" id="historyFileInput" accept=".json,application/json" class="hidden">
+    </div>
   </div>
 
   <div id="visionCard" class="hidden"><div id="visionHost"></div></div>
@@ -583,6 +591,7 @@
 <script src="js/android-bridge.js"></script>
 
 <!-- Модули приложения -->
+<script defer src="js/storage.js"></script>
 <script defer src="js/core.js"></script>
 <script defer src="js/markdown.js"></script>
 <script defer src="js/browse.js"></script>
