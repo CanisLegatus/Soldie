@@ -20,6 +20,7 @@
       js/top100.js    — ТОП-100
       js/cards.js     — карточки товара и группы
       js/zones-gifts.js — зоны, мега-зоны, подарки
+      js/sku3.js      — раздел «3SKU» (интегрированный проект suadela)
       js/app.js       — режимы, модалка, оркестрация, инициализация
       lib/            — xlsx и chart.js локально (без CDN)
   -->
@@ -409,6 +410,12 @@
             </div>
           </div>
           <div class="mode-cluster">
+            <span class="cluster-label">3SKU</span>
+            <div class="segmented">
+              <button type="button" class="seg-btn" data-mode="sku3">🧃 3SKU</button>
+            </div>
+          </div>
+          <div class="mode-cluster">
             <span class="cluster-label">Инструменты</span>
             <div class="segmented">
               <button type="button" class="seg-btn" data-mode="browse">👁 Просмотр</button>
@@ -447,6 +454,8 @@
   </div>
 
   <div id="visionCard" class="hidden"><div id="visionHost"></div></div>
+
+  <div id="sku3Card" class="hidden"></div>
 
   <div id="dashCard" class="card hidden">
     <div class="result-header">
@@ -594,6 +603,7 @@
 <script defer src="js/top100.js"></script>
 <script defer src="js/cards.js"></script>
 <script defer src="js/zones-gifts.js"></script>
+<script defer src="js/sku3.js"></script>
 <script defer src="js/app.js"></script>
 </body>
 </html>

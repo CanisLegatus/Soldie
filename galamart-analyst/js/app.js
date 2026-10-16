@@ -147,6 +147,11 @@ segBtns.forEach(btn => {
       updateBtn();
       return;
     }
+    if (currentMode === 'sku3') {
+      activateSku3();
+      updateBtn();
+      return;
+    }
     if (rawData.length) {
       if (currentMode === 'browse' && browseData) { rebuildGroupOptions(); applyBrowse(); }
       if (currentMode === 'top100') renderTop100();
@@ -163,6 +168,23 @@ segBtns.forEach(btn => {
 
 filterDateInput.addEventListener('change', updateBtn);
 
+// ── Раздел «3SKU» (suadela): ленивая активация при первом открытии ──
+let sku3Ready = false;
+function activateSku3() {
+  if (typeof window.sku3RenderMarkup !== 'function') {
+    showStatus('❌ Не загружен файл js/sku3.js — раздел «3SKU» недоступен.', 'error');
+    return;
+  }
+  if (!sku3Ready) {
+    window.sku3RenderMarkup();
+    try { window.sku3Init(); } catch (e) { console.error(e); showStatus('❌ Ошибка инициализации 3SKU: ' + e.message, 'error'); }
+    sku3Ready = true;
+  }
+  const card = document.getElementById('sku3Card');
+  if (card) card.classList.remove('hidden');
+}
+window.sku3Hide = function () { const c = document.getElementById('sku3Card'); if (c) c.classList.add('hidden'); };
+
 // ── Кнопка «Обработать» ──
 processBtn.addEventListener('click', async () => {
   showStatus('Фильтрация и расчёт...', 'success');
@@ -170,6 +192,7 @@ processBtn.addEventListener('click', async () => {
   await new Promise(r => setTimeout(r, 40));
 
   if (currentMode === 'vision') { visionCard.classList.remove('hidden'); processBtn.disabled = false; return; }
+  if (currentMode === 'sku3')   { activateSku3(); processBtn.disabled = false; return; }
 
   if (currentMode === 'browse') {
     browseData = rawData.slice();

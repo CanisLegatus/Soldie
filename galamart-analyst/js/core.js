@@ -25,6 +25,7 @@ const theadEl         = document.querySelector('#dataTable thead');
 const tableBody       = document.getElementById('tableBody');
 const segBtns         = document.querySelectorAll('.seg-btn');
 const visionCard      = document.getElementById('visionCard');
+const sku3Card        = document.getElementById('sku3Card');
 const dashCard        = document.getElementById('dashCard');
 const dashContent     = document.getElementById('dashContent');
 const analysisCard    = document.getElementById('analysisCard');
@@ -274,6 +275,7 @@ function scopeMarkupStock(scope) {
 function hideAllPages() {
   resultEl.classList.add('hidden');
   visionCard.classList.add('hidden');
+  if (window.sku3Hide) window.sku3Hide();
   dashCard.classList.add('hidden');
   analysisCard.classList.add('hidden');
   topCard.classList.add('hidden');
