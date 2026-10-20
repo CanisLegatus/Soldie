@@ -14,7 +14,7 @@
       js/core.js      — утилиты, парсер отчёта, настройки, агрегаторы
       js/markdown.js  — уценка: таблица, итоги, экспорт
       js/browse.js    — режим «Просмотр» и его фильтры
-      js/problems.js  — панель «Проблемы»
+      js/r29.js       — раздел «R29» (интегрированный проект r29/r29.html)
       js/dashboard.js — дашборд и детализации
       js/analysis.js  — «Анализ» (страницы показателей)
       js/top100.js    — ТОП-100
@@ -201,40 +201,8 @@
     .chip:hover:not(:disabled) { background: var(--hover); color: var(--text); transform: none; }
     .chip.active { background: var(--primary); border-color: var(--primary); color: #fff; }
     .problem-card { border: 1px solid var(--border); border-left: 5px solid #94a3b8; border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; background: #fff; }
-    .sev-0 { border-left-color: #94a3b8; }
-    .sev-1 { border-left-color: var(--warn); }
-    .sev-2 { border-left-color: #f97316; }
-    .sev-3 { border-left-color: var(--error); }
     .problem-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
-    .problem-type { font-size: 0.72rem; font-weight: 700; background: #f1f5f9; padding: 3px 8px; border-radius: 6px; white-space: nowrap; }
     .problem-name { font-size: 0.88rem; }
-    .flag-top { font-size: 0.72rem; font-weight: 700; background: var(--warn-bg); color: #92400e; padding: 2px 7px; border-radius: 4px; }
-    .problem-metrics { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
-    .pstat { background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 5px 10px; display: flex; flex-direction: column; min-width: 82px; }
-    .pstat-l { color: var(--text-muted); font-size: 0.68rem; }
-    .pstat-v { font-weight: 700; font-size: 0.85rem; }
-    .problem-rec { padding: 8px 12px; border-radius: 8px; font-size: 0.85rem; }
-    .rec-fire { background: var(--error-bg); color: #991b1b; }
-    .rec-warn { background: var(--warn-bg); color: #92400e; }
-    .rec-ok   { background: var(--success-bg); color: #065f46; }
-    .rec-dark { background: #1e293b; color: #f1f5f9; }
-    .top-summary { font-size: 0.85rem; color: var(--text-muted); margin: 10px 0; }
-    .issues-hero { display:grid; grid-template-columns:1.35fr 1fr; gap:12px; margin:12px 0; }
-    .issues-score { border-radius:14px; padding:16px; color:#fff; background:linear-gradient(135deg,#172554,#2563eb); }
-    .issues-score .big { font-size:1.8rem; font-weight:800; margin:5px 0; }
-    .issues-score .muted { color:#bfdbfe; font-size:.8rem; }
-    .issue-kpis { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
-    .issue-kpi { border:1px solid var(--border); border-radius:10px; padding:10px; background:#fff; }
-    .issue-kpi b { display:block; font-size:1rem; margin-top:3px; }
-    .issue-kpi span { color:var(--text-muted); font-size:.7rem; }
-    .issue-tree { border:1px solid var(--border); border-radius:12px; overflow:hidden; margin-top:10px; }
-    .issue-node { display:flex; align-items:center; gap:10px; width:100%; text-align:left; padding:12px; border:0; border-bottom:1px solid var(--border); background:#fff; color:var(--text); }
-    .issue-node:hover { background:#eff6ff; transform:none; }
-    .issue-node:last-child { border-bottom:0; }
-    .issue-node .node-name { font-weight:700; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .issue-node .node-stats { font-size:.75rem; color:var(--text-muted); text-align:right; }
-    .issue-node .node-count { color:#b91c1c; font-weight:800; white-space:nowrap; }
-    .issue-empty { padding:20px; color:var(--text-muted); text-align:center; }
 
     .zones-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
     .zone-card { border: 1px solid var(--border); border-radius: 12px; padding: 14px; background: #fff; cursor: pointer; transition: 0.2s; position: relative; min-height: 150px; }
@@ -398,7 +366,7 @@
               <button type="button" class="seg-btn active" data-mode="dash">📊 Дашборд</button>
               <button type="button" class="seg-btn" data-mode="analysis">🔬 Анализ</button>
               <button type="button" class="seg-btn" data-mode="top100">🏆 ТОП-100</button>
-              <button type="button" class="seg-btn" data-mode="issues">🚨 Проблемы</button>
+              <button type="button" class="seg-btn" data-mode="r29">🎯 R29</button>
               <button type="button" class="seg-btn" data-mode="vision">👁 Vision</button>
               <button type="button" class="seg-btn" data-mode="sales">💰 Продажи</button>
             </div>
@@ -504,13 +472,7 @@
     <div id="topContent"></div>
   </div>
 
-  <div id="issuesCard" class="card hidden">
-    <div class="result-header">
-      <h2 id="issuesTitle">🚨 Проблемы</h2>
-      <button class="btn-export" data-table-export="issuesContent">⬇️ Выгрузить в Excel</button>
-    </div>
-    <div id="issuesContent"></div>
-  </div>
+  <div id="r29Card" class="hidden"></div>
 
   <div id="verifyCard" class="card hidden">
     <div class="result-header"><h2>📍 Проверка на месте</h2></div>
@@ -598,7 +560,7 @@
 <script defer src="js/core.js"></script>
 <script defer src="js/markdown.js"></script>
 <script defer src="js/browse.js"></script>
-<script defer src="js/problems.js"></script>
+<script defer src="js/r29.js"></script>
 <script defer src="js/dashboard.js"></script>
 <script defer src="js/vision.js"></script>
 <script defer src="js/analysis.js"></script>

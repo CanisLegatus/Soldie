@@ -157,10 +157,14 @@ segBtns.forEach(btn => {
       updateBtn();
       return;
     }
+    if (currentMode === 'r29') {
+      activateR29();
+      updateBtn();
+      return;
+    }
     if (rawData.length) {
       if (currentMode === 'browse' && browseData) { rebuildGroupOptions(); applyBrowse(); }
       if (currentMode === 'top100') renderTop100();
-      if (currentMode === 'issues') renderIssues();
       if (currentMode === 'verify') renderVerify();
       if (currentMode === 'dash') renderDashboard();
       if (currentMode === 'analysis') renderAnalysis();
@@ -220,6 +224,23 @@ function activateSales() {
   if (card) card.classList.remove('hidden');
 }
 
+// ── Раздел «🎯 R29» (комм. зоны по ценовым сегментам, проект r29): ленивая активация при первом открытии ──
+let r29Ready = false;
+function activateR29() {
+  if (typeof window.r29RenderMarkup !== 'function') {
+    showStatus('❌ Не загружен файл js/r29.js — раздел «R29» недоступен.', 'error');
+    return;
+  }
+  if (!r29Ready) {
+    window.r29RenderMarkup();
+    try { window.r29Init(); } catch (e) { console.error(e); showStatus('❌ Ошибка инициализации R29: ' + e.message, 'error'); }
+    r29Ready = true;
+  }
+  const card = document.getElementById('r29Card');
+  if (card) card.classList.remove('hidden');
+}
+window.r29HideOnSwitch = function () { /* скрытие выполняется через window.r29Hide() в hideAllPages() */ };
+
 // ── Кнопка «Обработать» ──
 processBtn.addEventListener('click', async () => {
   showStatus('Фильтрация и расчёт...', 'success');
@@ -229,6 +250,7 @@ processBtn.addEventListener('click', async () => {
   if (currentMode === 'vision') { visionCard.classList.remove('hidden'); processBtn.disabled = false; return; }
   if (currentMode === 'sku3')   { activateSku3(); processBtn.disabled = false; return; }
   if (currentMode === 'sales')  { activateSales(); processBtn.disabled = false; return; }
+  if (currentMode === 'r29')    { activateR29(); processBtn.disabled = false; return; }
 
   if (currentMode === 'browse') {
     browseData = rawData.slice();
@@ -239,7 +261,6 @@ processBtn.addEventListener('click', async () => {
     return;
   }
   if (currentMode === 'top100')   { hideAllPages(); renderTop100(); processBtn.disabled = false; return; }
-  if (currentMode === 'issues')   { hideAllPages(); renderIssues(); processBtn.disabled = false; return; }
   if (currentMode === 'dash')     { hideAllPages(); renderDashboard(); processBtn.disabled = false; return; }
   if (currentMode === 'analysis') { hideAllPages(); renderAnalysis(); processBtn.disabled = false; return; }
   if (currentMode === 'zones')    { hideAllPages(); renderZones(); processBtn.disabled = false; return; }
