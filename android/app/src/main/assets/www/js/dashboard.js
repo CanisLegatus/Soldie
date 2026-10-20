@@ -42,7 +42,6 @@ function renderDashboard() {
   const avgPrice = A.sold > 0 ? A.to / A.sold : 0;
   const top100sum = [...rawData].sort((a, b) => num(b['то, руб']) - num(a['то, руб'])).slice(0, 100).reduce((s, r) => s + num(r['то, руб']), 0);
   const share = A.to > 0 ? (top100sum / A.to * 100).toFixed(1) : '—';
-  const problems = buildProblems(log);
   const deadPctSku = A.sku > 0 ? A.deadCount / A.sku * 100 : 0;
   const deadPctStock = A.stockSum > 0 ? A.deadSum / A.stockSum * 100 : 0;
 
@@ -54,21 +53,12 @@ function renderDashboard() {
     { key: 'stock', icon: '📦', label: 'Склад', value: fmt(A.stockSum) + ' ₽', sub: `${fmt(A.stock)} шт · оборачиваемость ${fmtDays(A.turnover)} дн.` },
     { key: 'dead', icon: '🧊', label: 'Мёртвый сток', value: fmt(A.deadSum) + ' ₽', sub: `${A.deadCount} SKU · ${deadPctSku.toFixed(1)}% SKU · ${deadPctStock.toFixed(1)}% склада`, cls: deadPctStock > 15 ? 'dk-alert' : '' },
     { key: 'turnover', icon: '🔄', label: 'Оборачиваемость', value: fmtDays(A.turnover) + ' дн.', sub: `скорость ${A.rate.toFixed(1)} шт/день`, cls: !isFinite(A.turnover) ? 'dk-alert' : '' },
-    { key: 'top100', icon: '🏆', label: 'Доля ТОП-100 в ТО', value: share + '%', sub: fmt(top100sum) + ' ₽', action: 'top100' },
-    { key: 'problems', icon: '🚨', label: 'Проблемы', value: fmt(problems.length), sub: ISSUE_TYPES.map(t => `${t.icon}${problems.filter(p => p.type === t.key).length}`).join('  '), cls: problems.length ? 'dk-alert' : 'dk-good', action: 'issues' }
+    { key: 'top100', icon: '🏆', label: 'Доля ТОП-100 в ТО', value: share + '%', sub: fmt(top100sum) + ' ₽', action: 'top100' }
   ];
-
-  const tease = [...problems].sort((a, b) => issuePriority(b) - issuePriority(a)).slice(0, 5);
-  const teaseHtml = tease.length
-    ? tease.map(p => {
-        const meta = ISSUE_TYPES.find(t => t.key === p.type);
-        return `<div class="dash-tease-row" data-open-product data-code="${escapeHtml(p.code)}">${meta.icon} <b>${escapeHtml(p.code)}</b> — ${escapeHtml(truncateStr(p.r['товар'], 48))} <span class="text-muted" style="margin-left:auto">→</span></div>`;
-      }).join('')
-    : '<div class="alert-item alert-ok">🎉 Срочных проблем нет</div>';
 
   dashContent.innerHTML = `
     <div class="dash-kpis">
-      ${cards.map(c => `<div class="dash-kpi ${c.cls || ''}" ${c.action === 'issues' ? 'data-jump-issues="all"' : c.action === 'top100' ? 'data-jump-mode="top100"' : `data-dash-open="${c.key}"`}>
+      ${cards.map(c => `<div class="dash-kpi ${c.cls || ''}" ${c.action === 'top100' ? 'data-jump-mode="top100"' : `data-dash-open="${c.key}"`}>
         <span class="dk-icon">${c.icon}</span>
         <div class="dk-label">${c.label}</div>
         <div class="dk-value">${c.value}</div>
@@ -79,14 +69,12 @@ function renderDashboard() {
     <div class="dash-grid">
       <div class="dash-card"><h4>🥧 Доли групп в ТО <span class="hint">(клик по сегменту — открыть группу)</span></h4><div class="dash-chart"><canvas id="dashC1"></canvas></div></div>
       <div class="dash-card"><h4>📦 Состояние стока <span class="hint">(клик — список товаров сегмента)</span></h4><div class="dash-chart"><canvas id="dashC2"></canvas></div></div>
-      <div class="dash-card"><h4>🚨 Проблемы по типам <span class="hint">(клик — открыть тип)</span></h4><div class="dash-chart"><canvas id="dashC3"></canvas></div></div>
       <div class="dash-card">
-        <h4>🔥 Самое срочное</h4>
-        ${teaseHtml}
+        <h4>🧭 Быстрые переходы</h4>
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:12px">
-          <button type="button" class="chip" data-jump-issues="all">🚨 Все проблемы</button>
           <button type="button" class="chip" data-jump-mode="analysis">🔬 Анализ</button>
           <button type="button" class="chip" data-jump-mode="top100">🏆 ТОП-100</button>
+          <button type="button" class="chip" data-jump-mode="r29">🎯 R29</button>
           <button type="button" class="chip" data-jump-mode="zones">🧱 Зоны</button>
           <button type="button" class="chip" data-jump-mode="gifts">🎁 Подарки</button>
         </div>
@@ -132,28 +120,12 @@ function renderDashboard() {
     }
   }));
 
-  dashCharts.push(new Chart(document.getElementById('dashC3'), {
-    type: 'bar',
-    data: {
-      labels: ISSUE_TYPES.map(t => `${t.icon} ${t.label}`),
-      datasets: [{ data: ISSUE_TYPES.map(t => problems.filter(p => p.type === t.key).length), backgroundColor: ['#ef4444', '#a855f7', '#64748b', '#f59e0b', '#8b5cf6', '#0ea5e9'], borderRadius: 4 }]
-    },
-    options: {
-      indexAxis: 'y', responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
-      scales: { x: { beginAtZero: true, ticks: { precision: 0 } } },
-      onClick: (evt, els) => { if (els && els.length) jumpToIssues(ISSUE_TYPES[els[0].index].key); }
-    }
-  }));
-
-  showStatus(`✅ Дашборд: ${fmt(A.sku)} SKU, ТО ${fmt(A.to)} ₽, проблем: ${problems.length}.`, 'success');
+  showStatus(`✅ Дашборд: ${fmt(A.sku)} SKU, ТО ${fmt(A.to)} ₽.`, 'success');
 }
 
 dashContent.addEventListener('click', e => {
   const d = e.target.closest('[data-dash-open]');
   if (d) { openDashDrill(d.dataset.dashOpen); return; }
-  const ji = e.target.closest('[data-jump-issues]');
-  if (ji) { jumpToIssues(ji.dataset.jumpIssues); return; }
   const jm = e.target.closest('[data-jump-mode]');
   if (jm) { switchMode(jm.dataset.jumpMode); return; }
   const p = e.target.closest('[data-open-product]');
@@ -178,7 +150,7 @@ var currentDrillKey = null;
 function drillShell(title, sub, tilesHtml, bodyHtml, pageKey) {
   currentDrillKey = pageKey || null;
   modalBox.innerHTML = `
-    <div class="modal-head">
+    <div class="main-modal-head">
       <div style="min-width:0">
         <div class="breadcrumb">📊 Дашборд · детализация</div>
         <h3>${title}</h3>
@@ -187,7 +159,7 @@ function drillShell(title, sub, tilesHtml, bodyHtml, pageKey) {
       <div style="display:flex;gap:6px">
         ${pageKey ? `<button type="button" data-an-page-jump="${pageKey}">🔬 Полная страница →</button>` : ''}
         <button type="button" class="btn-export" id="drillExportBtn">⬇️ Excel</button>
-        <button class="modal-close" type="button" data-modal-close>✕ Закрыть</button>
+        <button class="main-modal-close" type="button" data-modal-close>✕ Закрыть</button>
       </div>
     </div>
     ${tilesHtml ? `<div class="kpi-grid">${tilesHtml}</div>` : ''}

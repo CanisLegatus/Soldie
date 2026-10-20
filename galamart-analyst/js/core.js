@@ -37,9 +37,6 @@ const anCodesClearBtn = document.getElementById('anCodesClearBtn');
 const topCard         = document.getElementById('topCard');
 const topTitle        = document.getElementById('topTitle');
 const topContent      = document.getElementById('topContent');
-const issuesCard      = document.getElementById('issuesCard');
-const issuesTitle     = document.getElementById('issuesTitle');
-const issuesContent   = document.getElementById('issuesContent');
 const verifyCard      = document.getElementById('verifyCard');
 const verifyCodeInput = document.getElementById('verifyCodeInput');
 const verifyCodeBtn   = document.getElementById('verifyCodeBtn');
@@ -71,9 +68,6 @@ let currentGroupItems = [];
 let currentGroupTab = 'to';
 let topMetric = 'to';
 let topCodesValue = '';
-let issueFilter = 'all';
-let issuePath = [];
-let issueCfgOpen = false;
 let modalChart = null;
 let dashCharts = [];
 let anChart = null;
@@ -211,7 +205,7 @@ function stockDaysLeft(r) {
 }
 const NO_SALES_DAYS = 28;
 function isUnsoldDays(r) {
-  // Единое правило для дашборда, анализа, уценки и раздела «Проблемы».
+  // Единое правило для дашборда, анализа и уценки.
   const imp = parseDate(r['дата ввоза']);
   if (!imp) return false;
   const sold = num(r['продано (шт)']);
@@ -280,7 +274,7 @@ function hideAllPages() {
   dashCard.classList.add('hidden');
   analysisCard.classList.add('hidden');
   topCard.classList.add('hidden');
-  issuesCard.classList.add('hidden');
+  if (window.r29Hide) window.r29Hide();
   verifyCard.classList.add('hidden');
   zonesCard.classList.add('hidden');
   giftsCard.classList.add('hidden');
@@ -289,7 +283,6 @@ function switchMode(mode) {
   const b = document.querySelector(`.seg-btn[data-mode="${mode}"]`);
   if (b) b.click();
 }
-function jumpToIssues(key) { issueFilter = key; switchMode('issues'); }
 
 // ── Общие ячейки/плитки ──
 function shareCell(part, total) {
