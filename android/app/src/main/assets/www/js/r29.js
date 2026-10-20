@@ -19,7 +19,7 @@
   // ── Стили R29 (scope: #r29Card) ──
   var r29Style = document.createElement('style');
   r29Style.id = 'r29Styles';
-  r29Style.textContent = `#r29Card, :root {
+  r29Style.textContent = `#r29Card {
       --bg: #eef2f7;
       --card: rgba(255,255,255,.94);
       --border: #dbe2ea;
@@ -40,38 +40,23 @@
 
 
 
-#r29Card * {
+#r29Card {
+      box-sizing: border-box;
+      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+      color: var(--text);
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    #r29Card *,
+    #r29Card *::before,
+    #r29Card *::after {
       box-sizing: border-box;
     }
 
 
 
-
-#r29Card *,
-    #r29Card * {
-      margin: 0;
-      padding: 0;
-    }
-
-
-
-
-#r29Card * {
-      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
-      color: var(--text);
-      background:
-        radial-gradient(1200px 500px at 10% -10%, rgba(37, 99, 235, .14), transparent),
-        radial-gradient(900px 400px at 95% 0%, rgba(16, 185, 129, .10), transparent),
-        var(--bg);
-      padding: 18px;
-      font-size: 14px;
-      line-height: 1.45;
-    }
-
-
-
-
-#r29Card #app {
+#r29Card #r29App {
       max-width: 1600px;
       margin: 0 auto;
     }
@@ -713,7 +698,7 @@
 
 
 
-#r29Card .modal-overlay {
+#r29Card.r29-open .modal-overlay {
       position: fixed;
       inset: 0;
       background: rgba(15, 23, 42, .45);
@@ -886,7 +871,7 @@
 
 
 
-    @media print {
+    @media print and (min-width: 2160px) { /* legacy block from r29.html — neutralized for host page */
       @page {
         size: A4 landscape;
         margin: 10mm;
@@ -1266,9 +1251,45 @@
 
   <div id="print-root" class="print-root"></div>
 
+    <div id="groupModalOverlay" class="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h3 id="groupModalTitle">Группа</h3>
+        <button id="groupModalClose" type="button" class="btn small soft">✕ Закрыть</button>
+      </div>
+      <div id="groupModalBody" class="modal-body"></div>
+      <div class="modal-foot">
+        <button id="groupModalClear" type="button" class="btn small danger-soft">U0001F9F9 Убрать всю группу из выбора</button>
+        <span id="groupModalHint" class="muted"></span>
+      </div>
+    </div>
+  </div>
+
   <div id="toast" class="toast"></div>`;
     card.setAttribute('data-ready', '1');
   };
+
+  // ── Печать: переносим #print-root в портал в body и печатаем только его ──
+  function r29DoPrint() {
+    var c = document.getElementById('r29Card');
+    var root = c ? c.querySelector('#print-root') : null;
+    if (!root) return;
+    var portal = document.getElementById('r29PrintPortal');
+    if (!portal) {
+      portal = document.createElement('div');
+      portal.id = 'r29PrintPortal';
+      document.body.appendChild(portal);
+    }
+    portal.innerHTML = '';
+    portal.appendChild(root);
+    document.body.classList.add('galamart-printing-r29');
+    setTimeout(function () {
+      window.print();
+      document.body.classList.remove('galamart-printing-r29');
+      if (root.parentNode === portal) c.appendChild(root);
+    }, 80);
+  }
+  window.__r29DoPrint = r29DoPrint;
 
   window.r29Hide = function () {
     var c = document.getElementById('r29Card');
@@ -1278,7 +1299,7 @@
   window.r29Init = function () {
     var card = document.getElementById('r29Card');
     if (!card) return;
-        const $ = (id) => card.querySelector('#' + CSS.escape(id));
+        const $ = (id) => { const el = document.getElementById(id); return el && card.contains(el) ? el : card.querySelector('#' + CSS.escape(id)); };
 
         const state = {
           raw1: null,
@@ -2869,7 +2890,7 @@
             ]
           });
 
-          setTimeout(() => window.print(), 80);
+          window.__r29DoPrint();
         }
 
         window.__r29BuildPrintDocument = function () {
@@ -3074,6 +3095,7 @@
           const removed = removeGroupFromSelection(name);
           closeGroupModal();
           renderAll();
+        r29ObserveUI();
           showToast(`Группа «${name}» убрана из выбора (${removed} шт)`);
         });
 
@@ -3121,26 +3143,37 @@
   };
 
   // ── Печать свода выбранных позиций (адаптация window.print из r29.html) ──
+  // ── Показ/скрытие окна группы и тоста (они не внутри #r29App, fixed-позиционирование работает только без трансформ у предков) ──
+  function r29SyncOpenState() {
+    var c = document.getElementById('r29Card');
+    if (!c || !c.getAttribute('data-ready')) return;
+    var overlay = c.querySelector('#groupModalOverlay');
+    var toast = c.querySelector('#toast');
+    var open = !!overlay && overlay.classList.contains('show');
+    var toastOn = !!toast && toast.classList.contains('show');
+    c.classList.toggle('r29-modal-open', open);
+    c.classList.toggle('r29-toast-active', toastOn);
+    c.classList.toggle('r29-open', open || toastOn);
+  }
+  function r29ObserveUI() {
+    var c = document.getElementById('r29Card');
+    if (!c || typeof MutationObserver === 'undefined') return;
+    try {
+      var mo = new MutationObserver(r29SyncOpenState);
+      ['groupModalOverlay', 'toast'].forEach(function (id) {
+        var el = c.querySelector('#' + id);
+        if (el) mo.observe(el, { attributes: true, attributeFilter: ['class'] });
+      });
+    } catch (_) {}
+    r29SyncOpenState();
+  }
+
   window.r29PrintAllSelected = function () {
-    var card = document.getElementById('r29Card');
-    if (!card || !card.getAttribute('data-ready')) return false;
+    var c = document.getElementById('r29Card');
+    if (!c || !c.getAttribute('data-ready')) return false;
     if (typeof window.__r29BuildPrintDocument !== 'function') return false;
-    var ok = window.__r29BuildPrintDocument();
-    if (!ok) return false;
-    var portal = document.getElementById('r29PrintPortal');
-    if (!portal) {
-      portal = document.createElement('div');
-      portal.id = 'r29PrintPortal';
-      document.body.appendChild(portal);
-    }
-    var root = card.querySelector('#print-root');
-    if (root) { portal.innerHTML = ''; portal.appendChild(root); }
-    document.body.classList.add('galamart-printing-r29');
-    setTimeout(function () {
-      window.print();
-      document.body.classList.remove('galamart-printing-r29');
-      if (root) card.appendChild(root);
-    }, 80);
+    if (!window.__r29BuildPrintDocument()) return false;
+    r29DoPrint();
     return true;
   };
 })();
