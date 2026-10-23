@@ -11,6 +11,296 @@
 (function () {
   'use strict';
 
+  /* ══════════════════════════════════════════════════════════════
+     S3Store — слой хранения «горячих» данных раздела 3SKU в IndexedDB.
+     Проблематика: весь стейт (в первую очередь state.sales — записи продаж
+     за каждый загруженный день) сохранялся одним JSON-блоком в localStorage
+     (~5 МБ квота WebView), из-за чего при ежедневных импортах данных
+     переставало помещаться.
+
+     Схема решения (архитектура приложения и sku3Api не меняются):
+       • meta    — маленький снимок состояния: settings, checks, imports,
+                   version, lastSaved + salesIndex (список дат продаж);
+       • chunk:<ISO дата> — массив записей продаж одного дня (чанк);
+       • backup_legacy_v1 — оригинальный blob старого ключа localStorage
+                   (сохраняется до подтверждения миграции).
+     Импорт/удаление дня = одна транзакция с чанками; всё остальное читается
+     из компактного meta. При недоступности IndexedDB — автоматический откат
+     на localStorage (прежнее поведение, только для компактных данных).
+     ══════════════════════════════════════════════════════════════ */
+  var S3STORE_DB_NAME = 'sku3_motivator_idb';
+  var S3STORE_DB_VERSION = 1;
+  var S3STORE_META_KEY = 'meta';
+  var S3STORE_CHUNK_PREFIX = 'chunk:';
+  var S3STORE_BACKUP_KEY = 'backup_legacy_v1';
+
+  function s3idbOpen() {
+    return new Promise(function (resolve, reject) {
+      if (!window.indexedDB) { reject(new Error('IndexedDB недоступен')); return; }
+      var req;
+      try {
+        req = indexedDB.open(S3STORE_DB_NAME, S3STORE_DB_VERSION);
+      } catch (e) { reject(e); return; }
+      req.onupgradeneeded = function (ev) {
+        var oldVersion = ev.oldVersion || 0;
+        var db = req.result;
+        if (!db.objectStoreNames.contains('kv')) {
+          db.createObjectStore('kv');
+        } else if (oldVersion < 1) {
+          try { db.deleteObjectStore('kv'); } catch (e2) {}
+          db.createObjectStore('kv');
+        }
+      };
+      req.onsuccess = function () { resolve(req.result); };
+      req.onerror = function () { reject(req.error || new Error('Ошибка открытия IndexedDB')); };
+      req.onblocked = function () { reject(new Error('IndexedDB заблокирован другим вкладкой')); };
+    });
+  }
+
+  function s3idbGet(db, key) {
+    return new Promise(function (resolve, reject) {
+      var tx = db.transaction('kv', 'readonly');
+      var rq = tx.objectStore('kv').get(key);
+      rq.onsuccess = function () { resolve(rq.result); };
+      rq.onerror = function () { reject(rq.error); };
+    });
+  }
+
+  function s3idbGetAllKeys(db) {
+    return new Promise(function (resolve, reject) {
+      var tx = db.transaction('kv', 'readonly');
+      var rq = tx.objectStore('kv').getAllKeys();
+      rq.onsuccess = function () { resolve(rq.result || []); };
+      rq.onerror = function () { reject(rq.error); };
+    });
+  }
+
+  function s3idbPut(db, key, value) {
+    return new Promise(function (resolve, reject) {
+      var tx = db.transaction('kv', 'readwrite');
+      tx.objectStore('kv').put(value, key);
+      tx.oncomplete = function () { resolve(); };
+      tx.onerror = function () { reject(tx.error); };
+      tx.onabort = function () { reject(tx.error || new Error('Транзакция прервана')); };
+    });
+  }
+
+  function s3idbDelete(db, keys) {
+    return new Promise(function (resolve, reject) {
+      if (!keys.length) { resolve(); return; }
+      var tx = db.transaction('kv', 'readwrite');
+      var store = tx.objectStore('kv');
+      keys.forEach(function (k) { try { store.delete(k); } catch (e) {} });
+      tx.oncomplete = function () { resolve(); };
+      tx.onerror = function () { reject(tx.error); };
+      tx.onabort = function () { reject(tx.error || new Error('Транзакция прервана')); };
+    });
+  }
+
+  function s3dateKey(iso) { return /^\d{4}-\d{2}-\d{2}$/.test(String(iso || '')) ? String(iso) : '__nodate__'; }
+  function s3chunkKey(iso) { return S3STORE_CHUNK_PREFIX + iso; }
+
+  function S3Store() {
+    this.db = null;              // соединение с IndexedDB (null => fallback на localStorage)
+    this.useIdb = false;
+    this.fallbackKey = 'sku3_motivator_v1_fallback'; // компактный стейт, если IDB недоступен
+    this.meta = null;            // кэш meta-объекта
+    this.chunks = new Map();     // ISO дата -> массив записей продаж дня
+    this.pending = Promise.resolve(); // сериализация всех операций записи
+    this.writeErrorShown = false;
+    this.legacyBackupPresent = false; // есть ли backup старого состояния в IDB
+  }
+
+  S3Store.prototype.init = function () {
+    var self = this;
+    return s3idbOpen().then(function (db) {
+      self.db = db;
+      self.useIdb = true;
+      return self.loadFromDb();
+    }).catch(function (err) {
+      console.warn('[sku3] IndexedDB недоступен, возврат к localStorage:', err && err.message);
+      self.useIdb = false;
+      return self.loadFromFallback();
+    });
+  };
+
+  S3Store.prototype.loadFromDb = function () {
+    var self = this;
+    return s3idbGet(this.db, S3STORE_META_KEY).then(function (meta) {
+      self.meta = meta && typeof meta === 'object' ? meta : null;
+      if (!self.meta || !Array.isArray(self.meta.salesIndex)) {
+        self.chunks.clear();
+        return;
+      }
+      self.chunks.clear();
+      var dates = self.meta.salesIndex.filter(function (d) { return typeof d === 'string'; });
+      return Promise.all(dates.map(function (d) {
+        return s3idbGet(self.db, s3chunkKey(d)).then(function (v) {
+          self.chunks.set(d, Array.isArray(v) ? v : []);
+        }).catch(function () { self.chunks.set(d, []); });
+      }));
+    });
+  };
+
+  S3Store.prototype.loadFromFallback = function () {
+    try {
+      var raw = localStorage.getItem(this.fallbackKey);
+      this.meta = raw ? JSON.parse(raw) : null;
+    } catch (e) { this.meta = null; }
+    this.chunks.clear();
+    if (this.meta && Array.isArray(this.meta.salesIndex)) {
+      this.meta.salesIndex.forEach(function (d) { this.chunks.set(d, []); }, this);
+    }
+  };
+
+  /* Полная сборка state из meta + чанков (для renderAll / computeMetrics) */
+  S3Store.prototype.getState = function () {
+    var st = this.meta;
+    if (!st) return null;
+    var sales = [];
+    this.chunks.forEach(function (arr) {
+      if (Array.isArray(arr)) { for (var i = 0; i < arr.length; i++) sales.push(arr[i]); }
+    });
+    return Object.assign({}, st, { sales: sales });
+  };
+
+  /* Сохранение: meta всегда; чанки — только реально изменённые/удалённые.
+     Операции записи сериализуются в одной очереди (pending). */
+  S3Store.prototype.save = function (state, dirtyDates, removedDates) {
+    var self = this;
+    var meta = Object.assign({}, state, { sales: undefined, salesIndex: null });
+    delete meta.sales;
+    meta.salesIndex = Array.from(this.chunks.keys()).sort();
+
+    var op = function () {
+      if (self.useIdb && self.db) {
+        var tasks = [s3idbPut(self.db, S3STORE_META_KEY, meta)];
+        (removedDates || []).forEach(function (d) { tasks.push(s3idbDelete(self.db, [s3chunkKey(d)])); });
+        (dirtyDates || []).forEach(function (d) {
+          if (self.chunks.has(d)) tasks.push(s3idbPut(self.db, s3chunkKey(d), self.chunks.get(d)));
+        });
+        return Promise.all(tasks).then(function () { self.meta = meta; });
+      }
+      // Fallback: localStorage (компактный стейт без чанков продаж по дням)
+      try {
+        localStorage.setItem(self.fallbackKey, JSON.stringify(meta));
+        self.meta = meta;
+      } catch (e) {
+        var ex = new Error('localStorage переполнен');
+        ex.name = 'QuotaExceededError';
+        throw ex;
+      }
+      return Promise.resolve();
+    };
+
+    this.pending = this.pending.then(op, op);
+    return this.pending.catch(function (e) {
+      console.error('[sku3] Не удалось сохранить состояние:', e);
+      if (e && (e.name === 'QuotaExceededError' || e.code === 22 || e.code === 1014)) {
+        if (!self.writeErrorShown) {
+          self.writeErrorShown = true;
+          if (typeof showToast === 'function') showToast('Хранилище переполнено — часть данных могла не сохраниться. Скачайте резервную копию JSON.', 'error');
+        }
+      } else if (typeof showToast === 'function') {
+        showToast('Ошибка сохранения данных: ' + (e && e.message ? e.message : e), 'error');
+      }
+    });
+  };
+
+  /* Установка всего набора чанков продаж разом (миграция, загрузка JSON, очистка) */
+  S3Store.prototype.replaceAllSales = function (records) {
+    this.chunks.clear();
+    (records || []).forEach(function (r) {
+      if (!r) return;
+      var k = s3dateKey(r.date);
+      if (!this.chunks.has(k)) this.chunks.set(k, []);
+      this.chunks.get(k).push(r);
+    }, this);
+  };
+
+  S3Store.prototype.replaceDay = function (date, records) {
+    this.chunks.set(s3dateKey(date), Array.isArray(records) ? records.slice() : []);
+  };
+
+  S3Store.prototype.removeDays = function (dates) {
+    var list = Array.isArray(dates) ? dates : [dates];
+    list.forEach(function (d) { this.chunks.delete(s3dateKey(d)); }, this);
+  };
+
+  S3Store.prototype.clearAllSales = function () { this.chunks.clear(); };
+
+  S3Store.prototype.getLegacyBackup = function () {
+    var self = this;
+    if (!this.useIdb || !this.db) return Promise.resolve(null);
+    return s3idbGet(this.db, S3STORE_BACKUP_KEY).then(function (b) {
+      self.legacyBackupPresent = !!(b && b.data);
+      return b || null;
+    }).catch(function () { return null; });
+  };
+
+  S3Store.prototype.saveLegacyBackup = function (blob) {
+    var self = this;
+    if (!this.useIdb || !this.db) return Promise.resolve();
+    return s3idbPut(this.db, S3STORE_BACKUP_KEY, { at: new Date().toISOString(), data: blob }).then(function () {
+      self.legacyBackupPresent = true;
+    }).catch(function (e) {
+      console.warn('[sku3] Не удалось сохранить backup старого состояния:', e);
+    });
+  };
+
+  S3Store.prototype.dropLegacyBackup = function () {
+    var self = this;
+    if (!this.useIdb || !this.db) return Promise.resolve();
+    return s3idbDelete(this.db, [S3STORE_BACKUP_KEY]).then(function () {
+      self.legacyBackupPresent = false;
+    }).catch(function () {});
+  };
+
+  var s3store = new S3Store();
+
+  /* Одноразовый перенос данных из старого localStorage-ключа в IndexedDB.
+     Оригинал blob сохраняется как backup и удаляется только после
+     подтверждения пользователя. */
+  function migrateFromLegacy(store) {
+    var LEGACY_KEY = 'sku3_motivator_v1';
+    var pendingRaw = null;
+    try { pendingRaw = localStorage.getItem(LEGACY_KEY); } catch (e) { pendingRaw = null; }
+
+    var hasNew = !!store.meta;
+
+    if (!pendingRaw) {
+      if (hasNew) return Promise.resolve({ loaded: true });
+      return Promise.resolve({ loaded: false }); // чистая установка
+    }
+
+    var legacyState = null;
+    try { legacyState = JSON.parse(pendingRaw); } catch (e) { legacyState = null; }
+
+    // IDB уже содержит данные (возможны изменения после миграции) — старый ключ ждёт подтверждения удаления
+    if (hasNew) {
+      return store.saveLegacyBackup(pendingRaw).then(function () {
+        return { loaded: true, awaitingConfirm: true };
+      });
+    }
+
+    if (!legacyState || typeof legacyState !== 'object') {
+      // битый blob: сохраняем как backup и стартуем с чистого состояния
+      return store.saveLegacyBackup(pendingRaw).then(function () {
+        return { loaded: false, corrupted: true };
+      });
+    }
+
+    var migrated = migrateState(legacyState); // дефолты + версия, sales может быть очищен (prevVersion < STATE_VERSION)
+    store.replaceAllSales(migrated.sales || []);
+    return store.saveLegacyBackup(pendingRaw)
+      .then(function () { return store.save(migrated, Array.from(store.chunks.keys()), []); })
+      .then(function () { return { loaded: true, freshMigration: true, hadData: !!(migrated.sales && migrated.sales.length) }; })
+      .catch(function (e) {
+        console.error('[sku3] Миграция в IndexedDB не удалась:', e);
+        return { loaded: true, migrationFailed: true };
+      });
+  }
+
   // ── Стили suadela (scope: #sku3Card) ──
   var sku3Style = document.createElement('style');
   sku3Style.id = 'sku3Styles';
@@ -474,7 +764,9 @@ const DEFAULT_EMPLOYEES = [
   'Моисеева Дарина Денисовна'
 ];
 
-let state = loadState();
+/* Состояние: settings/checks/imports — компактный «meta»;
+   sales («горячие» данные) — чанки по дням в IndexedDB (см. S3Store). */
+let state = defaultState();          // заполняется асинхронно при инициализации
 let migrationNote = '';
 let currentTab = 'overview';
 let charts = {};
@@ -482,8 +774,12 @@ let pendingImports = [];
 let settingsDraft = null;
 let selectedSeller = null;
 let checksDraftDate = null;
-
-
+let dirtyDates = new Set();          // изменённые дни продаж (для точечной записи чанков)
+let removedDates = new Set();        // удалённые дни продаж (чанки удаляются из хранилища)
+let saveTimer = null;                // дебаунс фоновых сохранений
+let storeReady = false;              // данные догружены из хранилища
+let legacyPendingRaw = null;         // оригинальный blob старого ключа до подтверждения миграции
+const SAVE_DEBOUNCE_MS = 1500;
 
 function init(){
   if (typeof Chart !== 'undefined') {
@@ -491,8 +787,41 @@ function init(){
     Chart.defaults.color = '#64748b';
   }
   bindEvents();
-  renderAll();
-  if (migrationNote) showToast(migrationNote, 'warning');
+  showSkeleton('Загрузка данных…');
+  loadStateAsync().then(function(res){
+    hideSkeleton();
+    storeReady = true;
+    renderAll();
+    refreshSaveInfo();
+    if (res && res.freshMigration) {
+      showToast('Данные перенесены в новое хранилище (IndexedDB). Старая копия записей находится в разделе «Настройки → Данные и состояние».', 'info');
+    }
+    if (res && res.migrationFailed) {
+      showToast('Не удалось перенести данные в IndexedDB — используется прежнее хранение.', 'warning');
+    }
+    if (migrationNote) showToast(migrationNote, 'warning');
+  }).catch(function(e){
+    console.error('[sku3] Ошибка загрузки состояния:', e);
+    hideSkeleton();
+    storeReady = true;
+    renderAll();
+    showToast('Ошибка загрузки сохранённых данных: ' + (e && e.message ? e.message : e), 'error');
+  });
+}
+
+/* Скелетон-экран на время асинхронной догрузки состояния */
+function showSkeleton(text){
+  const card = document.getElementById('sku3Card');
+  if (!card || document.getElementById('sku3Skeleton')) return;
+  const el = document.createElement('div');
+  el.id = 'sku3Skeleton';
+  el.style.cssText = 'padding:48px 24px;text-align:center;color:#64748b;font:600 15px Inter,system-ui,sans-serif';
+  el.textContent = text || 'Загрузка…';
+  card.appendChild(el);
+}
+function hideSkeleton(){
+  const el = document.getElementById('sku3Skeleton');
+  if (el) el.remove();
 }
 
 /* ============================= STATE ============================= */
@@ -534,12 +863,117 @@ function defaultState(){
   };
 }
 
-function loadState(){
-  try{
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return migrateState(JSON.parse(raw));
-  } catch(e) {}
-  return defaultState();
+/* Асинхронная загрузка состояния: IndexedDB + одноразовая миграция из localStorage */
+function loadStateAsync(){
+  return s3store.init().then(function(){
+    return migrateFromLegacy(s3store);
+  }).then(function(res){
+    // Запоминаем старый ключ для подтверждения удаления (только при активном IndexedDB)
+    if (s3store.useIdb) {
+      try { legacyPendingRaw = localStorage.getItem('sku3_motivator_v1'); } catch(e) { legacyPendingRaw = null; }
+    }
+    const loaded = s3store.getState();
+    if (loaded) {
+      state = migrateState(loaded);
+      // sales уже разложен по чанкам в хранилище — синхронизируем chunks с состоянием
+      s3store.replaceAllSales(state.sales || []);
+    } else {
+      state = defaultState();
+      s3store.replaceAllSales([]);
+      return s3store.save(state, [], []).then(function(){ return res || { loaded: false }; });
+    }
+    return res || { loaded: true };
+  });
+}
+
+/* Синхронная сборка «state» из кэша хранилища (meta + чанки).
+   Используется persist() и sku3Api.getState(), чтобы ссылки на объект
+   state оставались валидными для внешних потребителей (js/sales.js). */
+function syncStateFromStore(){
+  const fresh = s3store.getState();
+  if (!fresh) return state;
+  const newSales = fresh.sales;
+  delete fresh.sales;
+  Object.assign(state, fresh);
+  state.sales = newSales;
+  return state;
+}
+
+/* Сохранение состояния: meta — всегда, чанки продаж — только изменённые дни.
+   mode='immediate' — запись сразу (важные события: импорт, настройки, сброс);
+   mode='debounced' — фоновое сохранение с дебаунсом (renderAll). */
+function persist(mode){
+  state.lastSaved = new Date().toISOString();
+  const d = Array.from(dirtyDates), r = Array.from(removedDates);
+  dirtyDates = new Set(); removedDates = new Set();
+
+  if (mode === 'debounced') {
+    // изменённые/удалённые даты остаются в очередях до фактической записи
+    d.forEach(x => dirtyDates.add(x));
+    r.forEach(x => removedDates.add(x));
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(function(){ saveTimer = null; persist('immediate'); }, SAVE_DEBOUNCE_MS);
+    return Promise.resolve();
+  }
+
+  if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+  return s3store.save(state, d, r).then(function(){
+    syncStateFromStore();
+    refreshStorageUi();
+  });
+}
+
+/* Точечное удаление чанков дней из памяти хранилища (для replace-операций) */
+function forgetSalesDays(dates){
+  const list = Array.isArray(dates) ? dates : [dates];
+  list.forEach(function(d){
+    const k = /^\d{4}-\d{2}-\d{2}$/.test(String(d||'')) ? String(d) : '__nodate__';
+    if (s3store.chunks.has(k)) { s3store.chunks.delete(k); removedDates.add(k); }
+  });
+}
+
+function refreshSaveInfo(){
+  const el = document.getElementById('storageInfoLine');
+  if (!el) return;
+  const days = s3store.chunks.size;
+  let recs = 0;
+  s3store.chunks.forEach(function(arr){ recs += Array.isArray(arr) ? arr.length : 0; });
+  const where = s3store.useIdb ? 'IndexedDB' : 'localStorage (резервный режим)';
+  const saved = state.lastSaved ? new Date(state.lastSaved).toLocaleString('ru-RU') : '—';
+  el.textContent = 'Хранилище: ' + where + ' · Дней продаж: ' + days + ' · Записей: ' + fmtNum(recs) + ' · Сохранено: ' + saved;
+}
+
+/* Обновление строки статуса и блока миграции в открытом окне настроек */
+function refreshStorageUi(){
+  const line = document.getElementById('storageInfoLine');
+  if (line) {
+    refreshSaveInfo();
+    let block = document.getElementById('migrationBlock');
+    const html = migrationBlockHtml();
+    if (!block && html) {
+      block = document.createElement('div');
+      block.id = 'migrationBlock';
+      line.insertAdjacentElement('afterend', block);
+    }
+    if (block) {
+      if (html) block.innerHTML = html;
+      else block.remove();
+    }
+  }
+}
+
+/* Фоновое сохранение не должно теряться при закрытии/сворачивании WebView.
+   При наличии «грязных» дней сначала синхронно пересобираем чанки из state.sales,
+   затем persist('immediate') ставится в очередь за текущей операцией записи. */
+function flushSku3Save(){
+  if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+  if (!storeReady || !state) return;
+  if (dirtyDates.size || removedDates.size) {
+    s3store.replaceAllSales(state.sales || []);
+    dirtyDates = new Set(s3store.chunks.keys());
+    removedDates = new Set();
+  }
+  persist('immediate');
 }
 
 function migrateState(st){
@@ -575,15 +1009,6 @@ function migrateState(st){
     imports: prevVersion >= STATE_VERSION && Array.isArray(st.imports) ? st.imports : [],
     lastSaved: prevVersion >= STATE_VERSION ? (st.lastSaved || null) : null
   };
-}
-
-function persist(){
-  try{
-    state.lastSaved = new Date().toISOString();
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  } catch(e){
-    showToast('Не удалось сохранить состояние в браузере. Возможно, переполнен localStorage.', 'error');
-  }
 }
 
 /* ============================= UTILS ============================= */
@@ -1382,7 +1807,7 @@ async function handleImportFiles(files){
 /* ============================= RENDER ============================= */
 
 function renderAll(){
-  persist();
+  persist('debounced');
   const m = computeMetrics();
   Object.keys(charts).forEach(destroyChart);
   renderHeader(m);
@@ -2385,15 +2810,35 @@ function renderSettings(){
         <div class="stat-box"><span>Записей чеков</span><strong>${fmtNum(state.checks.length)}</strong></div>
         <div class="stat-box"><span>Последнее сохранение</span><strong>${state.lastSaved ? new Date(state.lastSaved).toLocaleString('ru-RU') : '—'}</strong></div>
       </div>
+      <div class="note" id="storageInfoLine"></div>
+      <div id="migrationBlock">${migrationBlockHtml()}</div>
       <div class="add-row">
         <button class="btn" data-action="save-json">Скачать JSON-состояние</button>
         <button class="btn" data-action="load-json">Загрузить JSON-состояние</button>
         <button class="btn btn-danger" data-action="clear-sales">Очистить продажи</button>
         <button class="btn btn-danger" data-action="clear-checks">Очистить чеки</button>
       </div>
-      <div class="note" style="margin-top:10px">Состояние автоматически сохраняется в браузере. JSON нужен для резервной копии или переноса настроек на другой компьютер.</div>
+      <div class="note" style="margin-top:10px">Продажи хранятся по-дневно в IndexedDB — объём практически не ограничен и не зависит от лимита localStorage. Настройки и чеки сохраняются автоматически. JSON нужен для резервной копии или переноса настроек на другой компьютер.</div>
     </div>
   `;
+  refreshStorageUi();
+}
+
+/* Блок миграции в разделе «Данные и состояние»: показывается, пока
+   старый localStorage-ключ или его backup ждут подтверждения пользователя */
+function migrationBlockHtml(){
+  if (!s3store.useIdb) return '';
+  const hasPending = typeof legacyPendingRaw === 'string' && legacyPendingRaw;
+  const hasBackup = s3store.legacyBackupPresent;
+  if (!hasPending && !hasBackup) return '';
+  let html = '<div class="editor-card" style="margin-bottom:12px"><strong>Миграция данных завершена</strong>';
+  html += '<div class="note" style="margin-top:6px">Старая копия состояния (localStorage) всё ещё занимает место. Если расчёты и история отображаются корректно — удалите её. При проблемах можно временно вернуться к старым данным.</div>';
+  html += '<div class="add-row" style="margin-top:10px">';
+  if (hasPending) html += '<button class="btn btn-ghost" data-action="discard-legacy-key">Удалить старый ключ без подтверждения</button>';
+  if (hasPending || hasBackup) html += '<button class="btn btn-danger" data-action="confirm-migration-cleanup">Удалить старую копию</button>';
+  if (hasBackup) html += '<button class="btn" data-action="restore-legacy-backup">Восстановить из старой копии</button>';
+  html += '</div></div>';
+  return html;
 }
 
 function saveSettings(){
@@ -2432,6 +2877,7 @@ function saveSettings(){
   state.settings = JSON.parse(JSON.stringify(settingsDraft));
   settingsDraft = null;
   closeModal('settingsModal');
+  persist('immediate');
   renderAll();
   showToast('Настройки сохранены', 'success');
 }
@@ -2551,6 +2997,10 @@ function confirmImport(){
     const records = aggregateRecords(g.records.map(r => Object.assign({}, r, { date:g.date })));
     state.sales.push(...records);
     state.imports.push({ date:g.date, file:g.files.join(', '), at:new Date().toISOString(), count:records.length });
+    /* «Горячие» данные: чанк дня перезаписывается целиком (одна запись при persist) */
+    s3store.replaceDay(g.date, records);
+    dirtyDates.add(/^\d{4}-\d{2}-\d{2}$/.test(String(g.date || '')) ? g.date : '__nodate__');
+    removedDates.delete(g.date);
     if (addNew) {
       g.newSellers.forEach(name => {
         if (!findEmployeeByName(name)) state.settings.employees.push({ id:uid('emp'), name });
@@ -2561,6 +3011,7 @@ function confirmImport(){
   const importedDates = [...groups.keys()].sort();
   pendingImports = [];
   closeModal('importModal');
+  persist('immediate');
   renderAll();
   showToast('Загружено дней: ' + importedDates.length, 'success');
 
@@ -2639,6 +3090,7 @@ function saveChecks(){
     if (val > 0) state.checks.push({ date, seller:key, checks:val });
   });
   closeModal('checksModal');
+  persist('immediate');
   renderAll();
   showToast('Чеки за ' + formatFullDate(date) + ' сохранены', 'success');
 }
@@ -2663,8 +3115,16 @@ function loadJSONFile(file){
     try {
       const data = JSON.parse(reader.result);
       state = migrateState(data);
+      /* Полный перенос продаж в чанки: старые дни удаляются из хранилища,
+         новые записываются одной пакетной операцией */
+      removedDates = new Set(Array.from(s3store.chunks.keys()));
+      s3store.clearAllSales();
+      s3store.replaceAllSales(state.sales || []);
+      dirtyDates = new Set(s3store.chunks.keys());
       selectedSeller = null;
+      settingsDraft = null;
       closeModal('settingsModal');
+      persist('immediate').then(function(){ syncStateFromStore(); renderAll(); });
       renderAll();
       showToast('JSON-состояние загружено', 'success');
       if (migrationNote) showToast(migrationNote, 'warning');
@@ -2677,9 +3137,13 @@ function loadJSONFile(file){
 
 function clearSales(){
   if (!confirm('Удалить все импортированные продажи и отметки о загрузке дней?')) return;
+  removedDates = new Set(Array.from(s3store.chunks.keys()).concat(Array.from(removedDates)));
   state.sales = [];
   state.imports = [];
+  s3store.clearAllSales();
+  dirtyDates = new Set();
   closeModal('settingsModal');
+  persist('immediate');
   renderAll();
   showToast('Продажи очищены', 'warning');
 }
@@ -2688,19 +3152,80 @@ function clearChecks(){
   if (!confirm('Удалить все вручную введённые чеки?')) return;
   state.checks = [];
   closeModal('settingsModal');
+  persist('immediate');
   renderAll();
   showToast('Чеки очищены', 'warning');
 }
 
 function resetAll(){
   if (!confirm('Полный сброс: настройки, продажи, чеки и импорты будут удалены. Продолжить?')) return;
+  removedDates = new Set(Array.from(s3store.chunks.keys()).concat(Array.from(removedDates)));
   state = defaultState();
+  s3store.clearAllSales();
+  dirtyDates = new Set();
   selectedSeller = null;
   settingsDraft = null;
   pendingImports = [];
   closeModal('settingsModal');
+  persist('immediate');
   renderAll();
   showToast('Инструмент сброшен к начальным настройкам', 'warning');
+}
+
+/* Подтверждение миграции: пользователь видит, что всё работает —
+   старый localStorage-ключ и backup удаляются, место освобождается. */
+function confirmMigrationCleanup(){
+  const finish = function(){
+    closeModal('settingsModal');
+    renderSettings();
+    showToast('Старая копия данных удалена. Освобождено место в localStorage.', 'success');
+  };
+  try { localStorage.removeItem(STORAGE_KEY); } catch(e) {}
+  legacyPendingRaw = null;
+  if (s3store.useIdb) {
+    s3store.dropLegacyBackup().then(finish);
+  } else {
+    finish();
+  }
+}
+
+function discardPendingLegacy(){
+  try { localStorage.removeItem(STORAGE_KEY); } catch(e) {}
+  legacyPendingRaw = null;
+  closeModal('settingsModal');
+  renderSettings();
+  showToast('Старый ключ localStorage удалён.', 'success');
+}
+
+function restoreFromLegacyBackup(){
+  var raw = legacyPendingRaw;
+  if (!raw) {
+    try { raw = localStorage.getItem(STORAGE_KEY); } catch(e) { raw = null; }
+  }
+  if (raw) { applyRestoredState(raw); return; }
+  s3store.getLegacyBackup().then(function(b){
+    if (b && b.data) applyRestoredState(b.data);
+    else showToast('Резервная копия старого состояния не найдена', 'error');
+  });
+}
+
+function applyRestoredState(raw){
+  try {
+    var data = JSON.parse(raw);
+    state = migrateState(data);
+    removedDates = new Set(Array.from(s3store.chunks.keys()));
+    s3store.clearAllSales();
+    s3store.replaceAllSales(state.sales || []);
+    dirtyDates = new Set(s3store.chunks.keys());
+    try { localStorage.setItem(STORAGE_KEY, raw); } catch(e) {}
+    legacyPendingRaw = raw;
+    closeModal('settingsModal');
+    persist('immediate').then(function(){ syncStateFromStore(); renderAll(); renderSettings(); });
+    renderAll();
+    showToast('Данные восстановлены из резервной копии', 'success');
+  } catch(e) {
+    showToast('Не удалось восстановить резервную копию', 'error');
+  }
 }
 
 function addExampleSkus(){
@@ -2751,6 +3276,9 @@ function bindEvents(){
     if (action === 'clear-sales') { clearSales(); return; }
     if (action === 'clear-checks') { clearChecks(); return; }
     if (action === 'reset-all') { resetAll(); return; }
+    if (action === 'confirm-migration-cleanup') { confirmMigrationCleanup(); return; }
+    if (action === 'discard-legacy-key') { discardPendingLegacy(); return; }
+    if (action === 'restore-legacy-backup') { restoreFromLegacyBackup(); return; }
     if (action === 'confirm-import') { confirmImport(); return; }
     if (action === 'save-checks') { saveChecks(); return; }
     if (action === 'copy-previous-checks') { copyPreviousChecks(); return; }
@@ -2819,6 +3347,13 @@ function bindEvents(){
     if (e.key === 'Escape') {
       document.querySelectorAll('.sku3-modal.open').forEach(modal => closeModal(modal.id));
     }
+  });
+
+  /* Фоновое сохранение не должно теряться при закрытии/сворачивании WebView */
+  window.addEventListener('pagehide', function(){ flushSku3Save(); });
+  window.addEventListener('beforeunload', function(){ flushSku3Save(); });
+  document.addEventListener('visibilitychange', function(){
+    if (document.visibilityState === 'hidden') flushSku3Save();
   });
 }
 
