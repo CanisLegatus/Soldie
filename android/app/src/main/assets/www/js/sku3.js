@@ -1691,7 +1691,7 @@ function extractRecords(rows, start, header, date){
 function aggregateRecords(records){
   const map = new Map();
   records.forEach(r => {
-    const key = [r.date || '', sellerKeyFromName(r.seller), normArticle(r.article)].join('|');
+    const key = [r.date || '', sellerKeyFromName(r.seller), normArticle(r.article), Number(r.qty) < 0 ? 'return' : 'sale'].join('|');
     const ex = map.get(key);
     if (ex) {
       ex.qty = round2(ex.qty + (Number(r.qty) || 0));

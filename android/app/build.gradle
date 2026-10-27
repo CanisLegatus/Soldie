@@ -30,7 +30,7 @@ android {
 // Keep the WebView assets identical to the offline web source for every APK build.
 tasks.register('syncWebAssets', Sync) {
     from(rootProject.file('galamart-analyst')) {
-        include 'index.html', 'vision.css', 'director.css','suadela.css', 'js/**', 'lib/**', 'vision/**'
+        include 'index.html', 'vision.css', 'director.css','suadela.css','sales.css', 'js/**', 'lib/**', 'vision/**'
     }
     into(layout.projectDirectory.dir('src/main/assets/www'))
 }

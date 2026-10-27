@@ -1,0 +1,331 @@
+#salesCard {
+  --sa-green: #0f766e;
+  --sa-muted: #64748b;
+  padding: 24px;
+  background: #f7f9fc;
+}
+#salesCard [hidden] {
+  display: none !important;
+}
+#salesCard h2 {
+  font-size: 25px;
+  margin: 6px 0;
+}
+#salesCard h3 {
+  font-size: 17px;
+  margin: 0 0 12px;
+}
+#salesCard p {
+  color: var(--sa-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+#salesCard button {
+  font-size: 12px;
+  min-height: 34px;
+}
+#salesCard input,
+#salesCard select,
+#salesCard textarea {
+  min-width: 0;
+  border: 1px solid #d7e1e8;
+  border-radius: 6px;
+  padding: 9px;
+  background: white;
+  color: #172b3a;
+  font: inherit;
+  box-sizing: border-box;
+}
+#salesCard label {
+  font-size: 12px;
+  font-weight: 500;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: #526776;
+}
+#salesCard small {
+  display: block;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--sa-muted);
+  line-height: 1.5;
+}
+.sa-heading,
+.sa-panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 15px;
+  flex-wrap: wrap;
+}
+.sa-heading {
+  margin-bottom: 18px;
+}
+.sa-eyebrow {
+  font-size: 10px;
+  letter-spacing: 1.8px;
+  text-transform: uppercase;
+  color: var(--sa-green);
+  font-weight: 700;
+}
+.sa-actions,
+.sa-presets {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.sa-actions {
+  margin: 10px 0;
+}
+.sa-notice {
+  padding: 10px 13px;
+  border-left: 3px solid #9ab9c4;
+  background: #eef4f7;
+  margin: 8px 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #3f596b;
+}
+.sa-notice:empty {
+  display: none;
+}
+.sa-error {
+  border-color: #db6c57;
+  background: #fff0eb;
+}
+.sa-controls {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: end;
+  margin: 18px 0;
+}
+.sa-controls label {
+  flex: 1;
+  min-width: 140px;
+}
+.sa-search {
+  min-width: 210px !important;
+}
+.sa-selection,
+.sa-panel {
+  border: 1px solid #dfe7ee;
+  border-radius: 10px;
+  padding: 18px;
+  background: white;
+  margin: 15px 0;
+}
+.sa-selection textarea {
+  width: 100%;
+  max-width: 700px;
+}
+.sa-selection button {
+  margin: 10px 8px 10px 0;
+}
+#saPicker {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
+  max-height: 240px;
+  overflow: auto;
+  margin-top: 14px;
+}
+#saPicker label {
+  display: block;
+  line-height: 1.5;
+}
+#saPicker input {
+  vertical-align: middle;
+  accent-color: var(--sa-green);
+}
+.sa-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid #dce5ec;
+  margin: 22px 0 18px;
+  padding-bottom: 12px;
+}
+.sa-tabs button {
+  background: #e8eef3;
+  color: #3e5668;
+}
+.sa-tabs button.active {
+  background: var(--sa-green);
+  color: white;
+}
+.sa-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin: 14px 0;
+}
+.sa-kpi {
+  padding: 16px;
+  border: 1px solid #dde6ed;
+  background: white;
+  border-radius: 9px;
+  min-width: 0;
+}
+.sa-kpi > span {
+  font-size: 11px;
+  display: block;
+  color: #617688;
+}
+.sa-kpi strong {
+  display: block;
+  font-size: 23px;
+  letter-spacing: -0.5px;
+  margin: 8px 0;
+  overflow-wrap: anywhere;
+}
+.sa-kpi small {
+  min-height: 18px;
+}
+.sa-two {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.sa-two .sa-panel {
+  margin: 6px 0;
+}
+.sa-chart {
+  height: 310px;
+  position: relative;
+  min-width: 0;
+}
+.sa-scroll {
+  overflow: auto;
+  max-width: 100%;
+}
+.sa-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.sa-table th {
+  background: #f0f5f8;
+  color: #607787;
+  text-align: right;
+  font-weight: 600;
+  padding: 12px;
+}
+.sa-table th:first-child {
+  text-align: left;
+}
+.sa-table td {
+  padding: 11px;
+  border-bottom: 1px solid #e6edf2;
+  text-align: right;
+}
+.sa-table td:first-child {
+  text-align: left;
+  white-space: normal;
+  min-width: 180px;
+  max-width: 340px;
+}
+.sa-table tr:hover {
+  background: #f8fafb;
+}
+.sa-table input[type="number"] {
+  width: 90px;
+}
+.sa-red {
+  color: #d02727 !important;
+}
+.sa-orange {
+  color: #b77608 !important;
+}
+.sa-link {
+  background: transparent !important;
+  color: #0f766e !important;
+  padding: 0 !important;
+  text-align: left;
+}
+.sa-drop {
+  padding: 20px;
+  border: 1px dashed #a4bdc9;
+  border-radius: 8px;
+  font-size: 12px;
+  text-align: center;
+  color: #617989;
+  margin-top: 20px;
+}
+.sa-drop.drag {
+  background: #dff4ef;
+}
+#slCutModal {
+  border: 1px solid #cfdde4;
+  border-radius: 12px;
+  padding: 24px;
+  width: min(470px, 90vw);
+  box-sizing: border-box;
+  color: #172b3a;
+}
+#slCutModal::backdrop {
+  background: #102b3b88;
+}
+#slCutModal label {
+  margin: 15px 0;
+}
+#slCutModal input,
+#slCutModal select {
+  width: 100%;
+}
+@media (max-width: 1150px) {
+  .sa-two {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 600px) {
+  #salesCard {
+    padding: 14px;
+  }
+  .sa-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .sa-kpi {
+    padding: 12px;
+  }
+  .sa-kpi strong {
+    font-size: 19px;
+  }
+  .sa-chart {
+    height: 270px;
+  }
+  .sa-panel {
+    padding: 12px;
+  }
+  .sa-controls label {
+    min-width: 120px;
+  }
+}
+#salesCard .sa-method {
+  margin: 10px 0;
+  color: #617989;
+  font-size: 12px;
+}
+#salesCard .sa-method summary {
+  cursor: pointer;
+  padding: 8px 0;
+  font-weight: 500;
+}
+#salesCard .sa-method p {
+  max-width: 950px;
+}
+.sa-info {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #b4c7d0;
+  border-radius: 50%;
+  width: 17px;
+  height: 17px;
+  cursor: help;
+  margin-left: 7px;
+  font-size: 11px;
+}

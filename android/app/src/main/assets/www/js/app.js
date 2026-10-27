@@ -228,6 +228,7 @@ function activateSales() {
   }
   const card = document.getElementById('salesCard');
   if (card) card.classList.remove('hidden');
+  window.salesRefresh?.();
 }
 
 // ── Раздел «🎯 R29» (комм. зоны по ценовым сегментам, проект r29): ленивая активация при первом открытии ──
