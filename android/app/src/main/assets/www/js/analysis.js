@@ -10,6 +10,7 @@ const AN_PAGES = [
   { key: 'markup',    icon: '🏷', label: 'Наценка' },
   { key: 'sales',     icon: '🛒', label: 'Продажи' },
   { key: 'stock',     icon: '📦', label: 'Склад' },
+  { key: 'slow', icon: '🐢', label: 'Медленный сток' },
   { key: 'dead',      icon: '🧊', label: 'Мёртвый сток' },
   { key: 'turnover',  icon: '🔄', label: 'Оборачиваемость' }
 ];
@@ -177,7 +178,7 @@ function renderAnMetricPage(page) {
   const meta = AN_PAGES.find(p => p.key === page);
   const storeA = aggRows(rawData);
   const nodeRows = rawData.filter(r => anPath.every((v, i) => String(r[`группа ${i + 1}`] ?? '').trim() === v));
-  const scope = page === 'dead' ? nodeRows.filter(isDeadRow) : nodeRows;
+  const scope = page === 'slow' ? nodeRows.filter(isSlowRow) : page === 'dead' ? nodeRows.filter(isDeadRow) : nodeRows;
   const A = aggRows(scope);
   const nodeA = page === 'dead' ? aggRows(nodeRows) : null;
   const level = anPath.length;
@@ -211,6 +212,8 @@ function renderAnMetricPage(page) {
     tiles = tileHtml('Склад', fmt(A.stockSum) + ' ₽', 'kpi-accent', `${fmt(A.stock)} шт · ${shareTxt(A.stockSum, storeA.stockSum)}`) +
       tileHtml('Мёртвый сток', fmt(A.deadSum) + ' ₽', A.deadSum ? 'kpi-warn' : '', `${A.deadCount} SKU · ${A.stockSum > 0 ? (A.deadSum / A.stockSum * 100).toFixed(1) : 0}%`) +
       tileHtml('Оборачиваемость', fmtDays(A.turnover) + ' дн.') + tileHtml('SKU', fmt(A.sku));
+  } else if (page === 'slow') {
+    tiles = tileHtml('Медленный сток', fmt(A.stockSum) + ' ₽', 'kpi-warn', SLOW_HINT) + tileHtml('SKU', fmt(A.sku));
   } else if (page === 'dead') {
     const ages = scope.map(itemAgeDays).filter(v => v !== null);
     const avgAge = ages.length ? Math.round(ages.reduce((s, v) => s + v, 0) / ages.length) : null;
@@ -220,6 +223,7 @@ function renderAnMetricPage(page) {
       tileHtml('Средний возраст', avgAge !== null ? avgAge + ' дн.' : '—');
   } else if (page === 'turnover') {
     tiles = tileHtml('Оборачиваемость', fmtDays(A.turnover) + ' дн.', !isFinite(A.turnover) ? 'kpi-danger' : 'kpi-accent', 'запас ÷ скорость продаж') +
+      tileHtml('По себестоимости', fmtDays(A.costTurnover) + ' дн.', '', 'остаток ÷ (ТО СС / 28)') +
       tileHtml('Скорость', A.rate.toFixed(1) + ' шт/дн') + tileHtml('Склад', fmt(A.stock) + ' шт') + tileHtml('ТО', fmt(A.to) + ' ₽');
   }
 
@@ -268,6 +272,9 @@ function anGroupsTable(page, scope, nodeRows, A, level) {
   } else if (page === 'stock') {
     head = H([`Группа ${level + 1}`, 'SKU', 'Склад ₽', 'Доля', 'Шт', 'Мёртвый ₽', 'Оборач.']);
     rows = entries.map(e => `<tr><td>${L(e.g)}</td><td>${fmt(e.a.sku)}</td><td><b>${fmt(e.a.stockSum)} ₽</b></td>${shareCell(e.a.stockSum, A.stockSum)}<td>${fmt(e.a.stock)}</td><td>${fmt(e.a.deadSum)} ₽</td><td>${coverBadge(e.a.turnover)}</td></tr>`).join('');
+  } else if (page === 'slow') {
+    head = H(['SKU / группа', 'Склад ₽', 'Продано за 28 дней']);
+    rows = entries.map(e => `<tr><td>${L(e.g)}</td><td>${fmt(e.a.stockSum)} ₽</td><td>${fmt(e.a.sold)} шт</td></tr>`).join('');
   } else if (page === 'dead') {
     head = H([`Группа ${level + 1}`, 'Мёртвый ₽', 'Доля мёртвого', 'Мёртвых SKU', 'Склад группы ₽', '% мёртвого в группе']);
     rows = entries.map(e => {
@@ -337,6 +344,9 @@ function anItemsTable(page, scope, A) {
       const f = itemFrozen(r);
       return `<tr><td>${P(r)}</td>${N(r)}<td>${cubeBadge(r['кубы'])}</td><td>${fmt(num(r['склад кол']))}</td><td><b>${fmt(f)} ₽</b></td>${shareCell(f, A.stockSum)}<td>${fmt(num(r['то, руб']))} ₽</td><td>${daysBadgeR(r)}</td></tr>`;
     }).join('');
+  } else if (page === 'slow') {
+    head = H(['Код', 'Товар', 'КУБЫ', 'Остаток', 'Продано за 28 дней', 'Доля продаж · оценка', 'Склад ₽']);
+    rows = shown.map(r => `<tr><td>${P(r)}</td>${N(r)}<td>${cubeBadge(r['кубы'])}</td><td>${fmt(num(r['склад кол']))}</td><td>${fmt(num(r['продано (шт)']))}</td><td>${slowShare(r).toFixed(1)}%</td><td>${fmt(itemFrozen(r))} ₽</td></tr>`).join('');
   } else if (page === 'dead') {
     head = H(['Код', 'Товар', 'КУБЫ', 'Склад шт', 'Заморожено ₽', 'Ввоз', 'Лежит']);
     rows = shown.map(r => {
@@ -356,13 +366,13 @@ function buildAnChart(entries, page) {
   const cv = document.getElementById('anC1');
   if (!cv || typeof Chart === 'undefined' || !entries.length) return;
   if (anChart) anChart.destroy();
-  const additive = ['to', 'gp', 'sales', 'stock', 'dead'].includes(page);
+  const additive = ['to', 'gp', 'sales', 'stock', 'dead', 'slow'].includes(page);
   const descend = (lb) => { if (lb && lb !== 'Прочее') { anPath.push(lb); renderAnalysis(); } };
 
   if (additive) {
     const valFn = page === 'gp' ? e => e.a.gp
       : page === 'sales' ? e => e.a.sold
-      : (page === 'stock' || page === 'dead') ? e => e.a.stockSum
+      : (page === 'stock' || page === 'dead' || page === 'slow') ? e => e.a.stockSum
       : e => e.a.to;
     const sorted = [...entries].sort((a, b) => valFn(b) - valFn(a));
     const top = sorted.slice(0, 8);

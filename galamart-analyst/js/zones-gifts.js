@@ -12,11 +12,38 @@ let openZoneId = null;
 let trialCodes = [];
 let trialGroupVal = '';
 
-function persistZones() { try { localStorage.setItem('galamart_zones', JSON.stringify({ zones, megas })); } catch (e) {} }
+function validateZones(data) {
+  if (!data || !Array.isArray(data.zones) || (data.megas != null && !Array.isArray(data.megas))) throw new Error('Неверный формат зон');
+  const ids = new Set();
+  const nextZones = data.zones.map(z => {
+    if (!z || !Array.isArray(z.codes)) throw new Error('Неверный список артикулов зоны');
+    const id = String(z.id || genId('z'));
+    if (ids.has(id)) throw new Error('Повторный идентификатор зоны');
+    ids.add(id);
+    const refill = {};
+    for (const [code, value] of Object.entries(z.refill || {})) {
+      if (!Number.isFinite(Number(value)) || Number(value) < 0) throw new Error('Неверная норма выкладки');
+      refill[code] = Number(value);
+    }
+    return { id, name:String(z.name || 'Зона'), codes:[...new Set(z.codes.map(c => String(c).trim()).filter(Boolean))], refill };
+  });
+  const megaIds = new Set();
+  const nextMegas = (data.megas || []).map(m => {
+    if (!m || !Array.isArray(m.zoneIds)) throw new Error('Неверная мега-зона');
+    const id = String(m.id || genId('m'));
+    if (megaIds.has(id)) throw new Error('Повторный идентификатор мега-зоны');
+    megaIds.add(id);
+    const zoneIds = [...new Set(m.zoneIds.map(String))];
+    if (zoneIds.length < 2 || zoneIds.some(key => !ids.has(key))) throw new Error('Мега-зона ссылается на отсутствующие зоны');
+    return { id, name:String(m.name || 'Мега-зона'), zoneIds };
+  });
+  return {zones:nextZones, megas:nextMegas};
+}
+function persistZones() { try { localStorage.setItem('galamart_zones', JSON.stringify({ zones, megas })); } catch (e) { showStatus('❌ Зоны не сохранены. Выгрузите JSON: ' + e.message, 'error'); return false; } return true; }
 function loadZonesLS() {
   try {
     const d = JSON.parse(localStorage.getItem('galamart_zones') || 'null');
-    if (d) { zones = d.zones || []; megas = d.megas || []; }
+    if (d) { const parsed = validateZones(d); zones = parsed.zones; megas = parsed.megas; }
   } catch (e) {}
 }
 loadZonesLS();
@@ -39,22 +66,34 @@ function zoneStats(codesArr) {
     a.toss += num(r['то сс, руб']);
     return a;
   }, { stock: 0, stockSum: 0, sold: 0, to: 0, toss: 0 });
+  agg.gp = agg.to - agg.toss;
   const rateSum = rowsArr.reduce((s, r) => s + dailyRate(r), 0);
   const cover = rateSum > 0 ? agg.stock / rateSum : Infinity;
   return { rows: rowsArr, missing, agg, rateSum, cover };
 }
 
+function productZones(code) { return zones.filter(z => (z.codes || []).includes(String(code).trim())); }
+function combinedZoneNorm(code, fallback=0) { const members=productZones(code); return members.length ? members.reduce((sum,z)=>sum+Math.max(0,num((z.refill||{})[code])),0) : fallback; }
+function zoneMembershipHtml(code) {
+  const members=productZones(code);
+  return `<div class="product-zones"><b>Коммерческие зоны:</b> ${members.length?members.map(z=>`<button type="button" class="chip" data-zone-open-child="${escapeHtml(z.id)}">${escapeHtml(z.name)}</button>`).join(' '):'не включён в зоны'}${members.length>1?`<span class="ratio-badge ratio-warn">В ${members.length} зонах · общая норма ${fmt(combinedZoneNorm(code))} шт</span>`:''}</div>`;
+}
 function zoneItemStatus(r, norm, log) {
   const stock = num(r['склад кол']), rate = dailyRate(r);
   const projected = Math.max(0, stock - rate * log.arrivalIn);
+  if (parseDate(r['дата окончания продаж'])) return { st:'discontinued', projected, need:0, qty:0 };
+  norm = combinedZoneNorm(String(r['код']).trim(), norm);
   if (!(norm > 0)) return { st: 'nonorm', projected, need: 0, qty: 0 };
-  const need = norm * 1.1;
-  if (projected < need) return { st: 'order', projected, need, qty: Math.ceil(need - projected) };
+  if (String(r['кубы'] || '').toLowerCase().includes('зо')) return { st: 'blocked', projected, need: norm, qty: 0 };
+  const need = norm + rate * 7;
+  if (projected < need) return { st: 'order', projected, need, qty: Math.ceil(need - projected), warning: cubeKind(r['кубы']) === 'ВНЕ_АМ' };
   return { st: 'ok', projected, need, qty: 0 };
 }
 function zoneStatusBadgeHtml(chk) {
+  if (chk.st === 'discontinued') return '<span class="ratio-badge">Выводится — без дозаказа</span>';
+  if (chk.st === 'blocked') return '<span class="ratio-badge ratio-fire">ЗО — поставка недоступна</span>';
   if (chk.st === 'nonorm') return '<span class="hint">норма не задана</span>';
-  if (chk.st === 'order') return `<span class="ratio-badge ratio-fire">🔥 НУЖЕН ДОЗАКАЗ ~${chk.qty} шт</span>`;
+  if (chk.st === 'order') return `<span class="ratio-badge ratio-fire">🔥 НУЖЕН ДОЗАКАЗ ~${chk.qty} шт${chk.warning ? ' · ВнеАМ: только в крайнем случае' : ''}</span>`;
   return '<span class="ratio-badge ratio-ok">✅ хватает</span>';
 }
 function zoneOrderInfo(z, log) {
@@ -87,8 +126,8 @@ function zoneCardHtml(z, zlog) {
     <div class="zone-kv"><span>🔥 Дозаказ к поставке</span><b class="${oi && oi.orders ? 'fire-text' : ''}">${oi ? (oi.orders ? `${oi.orders} поз. ~${oi.qty} шт` : 'нет') : '—'}</b></div>
     ${st.missing ? `<div class="zone-kv"><span>⚠️ Не найдено</span><b>${st.missing}</b></div>` : ''}
   ` : `<div class="hint">нет данных — загрузите отчёт</div>`;
-  return `<div class="zone-card" data-zone-open="${z.id}">
-    <input type="checkbox" class="zone-pick" data-zone-pick="${z.id}"${checked} title="Выбрать для объединения в мега-зону">
+  return `<div class="zone-card" data-zone-open="${escapeHtml(z.id)}">
+    <input type="checkbox" class="zone-pick" data-zone-pick="${escapeHtml(z.id)}"${checked} title="Выбрать для объединения в мега-зону">
     <div class="zone-name">🧱 ${escapeHtml(z.name)}</div>
     <div class="zone-kv"><span>Артикулов</span><b>${z.codes.length}</b></div>
     ${stats}
@@ -100,7 +139,7 @@ function megaCardHtml(m, zlog) {
   const union = [...new Set(childZones.flatMap(z => z.codes))];
   const st = rawData.length ? zoneStats(union) : null;
   let orders = 0;
-  if (rawData.length) childZones.forEach(z => orders += zoneOrderInfo(z, zlog).orders);
+  if (rawData.length) for (const code of union) {const r=codeIndex.get(code);if(r&&zoneItemStatus(r,combinedZoneNorm(code),zlog).st==='order')orders++;}
   const chips = childZones.map(z => `<span class="mini-zone-chip">🧱 ${escapeHtml(z.name)} · ${z.codes.length}</span>`).join('');
   const stats = st ? `
     <div style="display:flex;flex-wrap:wrap;gap:14px;margin-top:8px;font-size:.82rem">
@@ -111,10 +150,10 @@ function megaCardHtml(m, zlog) {
       <span>Покрытие: ${coverBadge(st.cover)}</span>
       <span>🔥 Дозаказ: <b class="${orders ? 'fire-text' : ''}">${orders} поз.</b></span>
     </div>` : '';
-  return `<div class="mega-card" data-mega-open="${m.id}">
+  return `<div class="mega-card" data-mega-open="${escapeHtml(m.id)}">
     <div class="mega-tools">
-      <button class="icon-btn" type="button" data-mega-rename="${m.id}" title="Переименовать">✎</button>
-      <button class="icon-btn" type="button" data-mega-split="${m.id}" title="Разделить мега-зону">✖</button>
+      <button class="icon-btn" type="button" data-mega-rename="${escapeHtml(m.id)}" title="Переименовать">✎</button>
+      <button class="icon-btn" type="button" data-mega-split="${escapeHtml(m.id)}" title="Разделить мега-зону">✖</button>
     </div>
     <div class="zone-name">🧩 ${escapeHtml(m.name)}<span class="mega-badge">МЕГА-ЗОНА</span></div>
     <div>${chips || '<span class="hint">зоны удалены</span>'}</div>
@@ -155,11 +194,13 @@ function renderZones() {
   }
   html += `<h4 style="margin:14px 0 10px">🧱 Зоны ${zones.length ? `(${zones.length})` : ''}</h4>`;
   if (!zones.length) {
-    html += '<div class="alert-item alert-ok">Зон пока нет. Нажмите «➕ Новая зона» и создайте первую. Для каждого артикула можно задать норму выкладки (шт) — система проверит, хватит ли стока к ближайшей поставке (норма + 10% на кросс-выкладки), и подсветит «НУЖЕН ДОЗАКАЗ».</div>';
+    html += '<div class="alert-item alert-ok">Зон пока нет. Нажмите «➕ Новая зона» и создайте первую. Для каждого артикула можно задать норму выкладки (шт) — система проверит, хватит ли стока к ближайшей поставке (норма выкладки + продажи до следующей поставки), и подсветит «НУЖЕН ДОЗАКАЗ».</div>';
   } else {
     html += `<div class="zones-grid">${zones.map(z => zoneCardHtml(z, zlog)).join('')}</div>`;
     html += '<div class="hint" style="margin-top:10px">Клик по карточке — аналитика зоны и нормы выкладки. Галочка в углу — выбор для объединения в мега-зону.</div>';
   }
+  const shared=[...new Set(zones.flatMap(z=>z.codes))].filter(c=>productZones(c).length>1);
+  if(shared.length)html='<div class="alert-item alert-warn">Артикулов в нескольких зонах: <b>'+shared.length+'</b>. Нормы выкладки суммируются; все зоны указаны в карточке товара.</div>'+html;
   zonesContent.innerHTML = html;
   zonesTitle.textContent = `🧱 Коммерческие зоны${zones.length ? ` — ${zones.length}` : ''}${megas.length ? ` · мега: ${megas.length}` : ''}`;
 }
@@ -178,14 +219,14 @@ zonesCard.addEventListener('click', e => {
     const codes = [...new Set((document.getElementById('newZoneCodes')?.value || '').split(/[\s,;]+/).map(s => s.trim()).filter(Boolean))];
     if (!codes.length) { showStatus('⚠️ Укажите хотя бы один артикул.', 'error'); return; }
     zones.push({ id: genId('z'), name, codes, refill: {} });
-    persistZones(); zoneFormOpen = false; renderZones();
+    if (!persistZones()) return; zoneFormOpen = false; renderZones();
     showStatus(`✅ Зона «${name}» создана: ${codes.length} артикулов.`, 'success');
     return;
   }
   if (e.target.closest('#megaMergeBtn')) {
     const name = (document.getElementById('megaNameInput')?.value || '').trim() || `Мега-зона ${megas.length + 1}`;
     megas.push({ id: genId('m'), name, zoneIds: [...zoneSel] });
-    zoneSel.clear(); persistZones(); renderZones();
+    zoneSel.clear(); if (!persistZones()) return; renderZones();
     showStatus(`🧩 Мега-зона «${name}» создана.`, 'success');
     return;
   }
@@ -210,13 +251,13 @@ zonesCard.addEventListener('change', e => {
 function megaRename(id) {
   const m = megas.find(x => x.id === id); if (!m) return;
   const name = prompt('Новое название мега-зоны:', m.name);
-  if (name && name.trim()) { m.name = name.trim(); persistZones(); renderZones(); if (!modalOverlay.classList.contains('hidden')) openMegaModal(id); }
+  if (name && name.trim()) { m.name = name.trim(); if (!persistZones()) return; renderZones(); if (!modalOverlay.classList.contains('hidden')) openMegaModal(id); }
 }
 function megaSplit(id) {
   const m = megas.find(x => x.id === id); if (!m) return;
   if (!confirm(`Разделить мега-зону «${m.name}»? Зоны останутся, объединение исчезнет.`)) return;
   megas = megas.filter(x => x.id !== id);
-  persistZones(); closeModal(); renderZones();
+  if (!persistZones()) return; closeModal(); renderZones();
   showStatus('Мега-зона разделена.', 'success');
 }
 
@@ -244,10 +285,10 @@ zonesFileInput.addEventListener('change', e => {
   rd.onload = ev => {
     try {
       const d = JSON.parse(ev.target.result);
-      if (!d || !Array.isArray(d.zones)) throw new Error('неверный формат файла');
-      zones = d.zones.map(z => ({ id: z.id || genId('z'), name: String(z.name || 'Зона'), codes: (z.codes || []).map(String), refill: z.refill || {} }));
-      megas = (d.megas || []).map(m => ({ id: m.id || genId('m'), name: String(m.name || 'Мега-зона'), zoneIds: (m.zoneIds || []).map(String) }));
-      persistZones(); zoneSel.clear(); renderZones();
+      const parsed = validateZones(d);
+      zones = parsed.zones; megas = parsed.megas;
+      const saved = persistZones(); zoneSel.clear(); renderZones();
+      if (!saved) return;
       showStatus(`📂 Загружено зон: ${zones.length}, мега-зон: ${megas.length}.`, 'success');
     } catch (err) { showStatus('❌ Не удалось загрузить зоны: ' + err.message, 'error'); }
   };
@@ -292,7 +333,7 @@ function openZoneModal(id) {
     const gpI = rowGp(e.r);
     return `<tr>
       <td><span class="link-cell" data-open-product data-code="${escapeHtml(e.code)}">${escapeHtml(e.code)}</span></td>
-      <td style="white-space:normal">${escapeHtml(truncateStr(e.r['товар'], 44))}</td>
+      <td style="white-space:normal">${escapeHtml(truncateStr(e.r['товар'], 44))}${productZones(e.code).length>1?`<span class="su-zone-flag">В ${productZones(e.code).length} зонах · суммарная норма ${fmt(combinedZoneNorm(e.code))} шт</span>`:''}</td>
       <td>${cubeBadge(e.r['кубы'])}</td>
       <td class="${gpI < 0 ? 'fire-text' : ''}">${fmt(gpI)} ₽</td>
       <td>${fmt(num(e.r['склад кол']))}</td>
@@ -312,8 +353,8 @@ function openZoneModal(id) {
         <div class="text-muted">${z.codes.length} артикулов${st && st.missing ? ` · ⚠️ не найдено в отчёте: ${st.missing}` : ''}</div>
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap">
-        <button type="button" class="btn-ghost" data-zone-rename="${z.id}">✎ Переименовать</button>
-        <button type="button" class="btn-danger" data-zone-delete="${z.id}">🗑 Удалить</button>
+        <button type="button" class="btn-ghost" data-zone-rename="${escapeHtml(z.id)}">✎ Переименовать</button>
+        <button type="button" class="btn-danger" data-zone-delete="${escapeHtml(z.id)}">🗑 Удалить</button>
         <button type="button" class="main-modal-close" data-modal-close>✕</button>
       </div>
     </div>
@@ -323,7 +364,7 @@ function openZoneModal(id) {
     <h4>Состав зоны · нормы выкладки</h4>
     <div style="display:flex;gap:8px;margin:8px 0;flex-wrap:wrap">
       <textarea id="zoneAddCodes" placeholder="Коды для добавления (через пробел, запятую или с новой строки)…" style="flex:1;min-width:260px;min-height:38px"></textarea>
-      <button type="button" data-zone-add-codes="${z.id}">➕ Добавить в зону</button>
+      <button type="button" data-zone-add-codes="${escapeHtml(z.id)}">➕ Добавить в зону</button>
     </div>
     ${rows.length ? `
       <div class="zone-scroll">
@@ -457,7 +498,7 @@ function openMegaModal(id) {
       <td>${zs ? fmt(zs.agg.stock) + ' шт' : '—'}</td>
       <td>${zs ? coverBadge(zs.cover) : '—'}</td>
       <td>${oi ? (oi.orders ? `<span class="fire-text">${oi.orders} поз.</span>` : 'нет') : '—'}</td>
-      <td><button type="button" class="icon-btn" data-zone-open-child="${z.id}">открыть →</button></td>
+      <td><button type="button" class="icon-btn" data-zone-open-child="${escapeHtml(z.id)}">открыть →</button></td>
     </tr>`;
   }).join('');
 
@@ -469,8 +510,8 @@ function openMegaModal(id) {
         <div class="text-muted">${childZones.length} зон · ${union.length} уникальных артикулов</div>
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap">
-        <button type="button" class="btn-ghost" data-mega-rename="${m.id}">✎ Переименовать</button>
-        <button type="button" class="btn-danger" data-mega-split="${m.id}">✖ Разделить</button>
+        <button type="button" class="btn-ghost" data-mega-rename="${escapeHtml(m.id)}">✎ Переименовать</button>
+        <button type="button" class="btn-danger" data-mega-split="${escapeHtml(m.id)}">✖ Разделить</button>
         <button type="button" class="main-modal-close" data-modal-close>✕</button>
       </div>
     </div>
@@ -490,6 +531,7 @@ function openMegaModal(id) {
 
 // ── Подарки ──
 let giftSelectedCodes = new Set();
+let giftFilteredRows=[];
 
 function giftRebuildOptions() {
   const uniq = (arr, key) => [...new Set(arr.map(r => String(r[key] ?? '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ru'));
@@ -517,9 +559,14 @@ function renderGifts() {
   const limit = +giftLimit.value || 0;
   const g1 = giftSel1.value, g2 = giftSel2.value, g3 = giftSel3.value;
   const onlyStock = giftInStock.checked;
+  const cubeFilter = new Set([...document.querySelectorAll('#giftCubeFilter input:checked')].map(option => option.value));
+  const stockFilter = document.getElementById('giftStockFilter').value;
 
   let items = rawData.filter(r => {
     const cost = num(r['себ, руб.']);
+    if (cubeFilter.size && !cubeFilter.has(cubeKind(r['кубы']))) return false;
+    if (stockFilter === 'dead' && !isDeadRow(r)) return false;
+    if (stockFilter === 'slow' && !isSlowRow(r)) return false;
     if (cost <= 0 || cost > limit) return false;
     if (g1 && String(r['группа 1'] ?? '').trim() !== g1) return false;
     if (g2 && String(r['группа 2'] ?? '').trim() !== g2) return false;
@@ -528,6 +575,7 @@ function renderGifts() {
     return true;
   }).sort((a, b) => num(b['то, руб']) - num(a['то, руб']));
 
+  giftFilteredRows=items;
   const total = items.length;
   const shown = items.slice(0, 500);
   const sumCost = items.reduce((s, r) => s + num(r['себ, руб.']), 0);
@@ -585,36 +633,26 @@ function updateGiftSelectedCount() {
   if (el) el.textContent = giftSelectedCodes.size;
 }
 
-function exportSelectedGifts() {
-  if (giftSelectedCodes.size === 0) { showStatus('⚠️ Выберите хотя бы один товар', 'error'); return; }
-  const rows = [['Код', 'Товар', 'Группа 1', 'Группа 2', 'Группа 3', 'Себестоимость', 'Цена маг', 'Склад']];
-  rawData.forEach(r => {
-    const code = String(r['код'] ?? '').trim();
-    if (giftSelectedCodes.has(code)) {
-      rows.push([
-        code,
-        r['товар'],
-        r['группа 1'],
-        r['группа 2'],
-        r['группа 3'],
-        num(r['себ, руб.']),
-        num(r['цена маг, руб.']),
-        num(r['склад кол'])
-      ]);
-    }
-  });
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Подарки');
-  const today = new Date().toLocaleDateString('ru-RU').replace(/\./g, '-');
-  XLSX.writeFile(wb, `galamart_gifts_selected_${today}.xlsx`);
-  showStatus(`✅ Экспортировано ${giftSelectedCodes.size} подарков`, 'success');
+function exportGifts(selectedOnly) {
+  try {
+    const source=selectedOnly?rawData.filter(r=>giftSelectedCodes.has(String(r['код']).trim())):giftFilteredRows;
+    if(!source.length)throw Error('Нет товаров для экспорта');
+    const type=document.getElementById('giftExportType').value;
+    exportToExcel('suadela_gifts_'+excelDateSuffix()+'.xlsx','Подарки',SuadelaExport.rawRows(source,CANON_HEADERS,DirectorRules.product,type));
+  }catch(error){showStatus('❌ '+error.message,'error');}
 }
+function exportSelectedGifts(){exportGifts(true);}
 
 let giftTimer = null;
 giftLimit.addEventListener('input', () => { clearTimeout(giftTimer); giftTimer = setTimeout(() => { if (rawData.length) renderGifts(); }, 200); });
 [giftSel1, giftSel2, giftSel3].forEach(s => s.addEventListener('change', () => { if (rawData.length) renderGifts(); }));
+[document.getElementById('giftCubeFilter'), document.getElementById('giftStockFilter')].forEach(el => el.addEventListener('change', () => { if (rawData.length) renderGifts(); }));
 giftInStock.addEventListener('change', () => { if (rawData.length) renderGifts(); });
+
+document.getElementById('giftCubeReset').addEventListener('click', () => {
+  document.querySelectorAll('#giftCubeFilter input').forEach(option => option.checked = false);
+  if (rawData.length) renderGifts();
+});
 
 // Обработчики для кнопок выбора подарков
 document.addEventListener('click', e => {

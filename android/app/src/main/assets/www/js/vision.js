@@ -13,7 +13,7 @@
   host.appendChild(container);
   
   // Render HTML structure with drag-drop handlers
-  container.innerHTML = '<header>\n  <div class="wrap hbar">\n    <div class="logo">V</div>\n    <div><h1>Vision</h1><small>дашборд директора магазина · август 2026</small></div>\n    <div class="hspace">\n      <span class="fchip" id="ch2"><span class="dot"></span><span id="ch2t">Статистика — не загружена</span></span>\n      <span class="fchip" id="ch1"><span class="dot"></span><span id="ch1t">План-факт — не загружен</span></span>\n      <button class="btn" data-vision-file="2">⬆ Статистика</button>\n      <button class="btn" data-vision-file="1">⬆ План-факт</button>\n    </div>\n  </div>\n</header>\n\n<section id="hero">\n  <div class="wrap">\n    <div class="lead">\n      <h2><em>Vision</em> — весь магазин на одном экране</h2>\n      <p>Загрузите «Статистику расширенную» (обязательно) и «Рейтинг / план-факт» (прогнозы, дневная динамика, ассортимент). Каждый показатель кликабелен — внутри драйвер-дерево: за счёт чего магазин растёт или отстаёт.</p>\n    </div>\n    <div class="drops">\n      <div class="drop" id="d2" onclick="pickFile(2)" ondragover="event.preventDefault();this.style.borderColor=\'#155EEF\';" ondragleave="this.style.borderColor=\'\';" ondrop="event.preventDefault();this.style.borderColor=\'\';if(event.dataTransfer.files&&event.dataTransfer.files[0]){loadWorkbook(2,event.dataTransfer.files[0]);}">\n        <h3>📗 Файл 2 · Статистика (расширенная) ГМ</h3>\n        <p>Вкладка «статистика расширенная»: ТО, ВП, наценка, чеки, средний чек, м², остатки, SKU — план/факт и прошлый год.</p>\n        <div class="st" id="dst2"></div>\n      </div>\n      <div class="drop" id="d1" onclick="pickFile(1)" ondragover="event.preventDefault();this.style.borderColor=\'#155EEF\';" ondragleave="this.style.borderColor=\'\';" ondrop="event.preventDefault();this.style.borderColor=\'\';if(event.dataTransfer.files&&event.dataTransfer.files[0]){loadWorkbook(1,event.dataTransfer.files[0]);}">\n        <h3>📘 Файл 1 · Рейтинг и план-факт</h3>\n        <p>Прогнозы, прирост МТМ, LFL, дневные план/факт/прогноз по ТО и чекам, продажи по товарным группам.</p>\n        <div class="st" id="dst1"></div>\n      </div>\n    </div>\n  </div>\n</section>\n\n<main id="app" class="wrap hidden">\n  <div class="cbar">\n    <div class="field"><label>Поиск магазина</label><input id="storeQ" placeholder="Начните вводить…" style="width:220px"/></div>\n    <div class="field"><label>Магазин</label><select id="storeSel"></select></div>\n    <div class="field"><label>Сравнивать с</label>\n      <select id="mode">\n        <option value="net">Вся сеть</option>\n        <option value="fo">Мой федеральный округ</option>\n        <option value="reg">Мой регион</option>\n        <option value="lfl">Моя LFL-группа</option>\n        <option value="sim">Похожие магазины</option>\n        <option value="custom">Произвольная выборка</option>\n      </select>\n    </div>\n    <div class="field"><label>Выборка</label><button class="btn" id="customBtn">🎯 <span id="customLbl">Собрать выборку</span></button></div>\n    <div class="tags" id="tags"></div>\n  </div>\n  <div class="tabs" id="tabs"></div>\n  <section id="view"></section>\n</main>\n\n<div class="modal" id="customM">\n  <div class="mbox">\n    <div class="mhead"><h3>Произвольная выборка для сравнения</h3><button class="btn" id="mclose">✕</button></div>\n    <div class="mbody">\n      <input id="msearch" placeholder="Поиск по названию, региону, округу…"/>\n      <div class="mlist" id="mlist"></div>\n    </div>\n    <div class="mfoot">\n      <span class="cnt" id="mcnt"></span>\n      <div style="display:flex;gap:8px">\n        <button class="btn" id="mclear">Очистить</button>\n        <button class="btn" id="mapply" style="background:var(--acc);border-color:var(--acc);color:#fff">Применить</button>\n      </div>\n    </div>\n  </div>\n</div>\n\n<div class="modal" id="drillM">\n  <div class="mbox wide">\n    <div class="mhead"><h3 id="drillTitle">Анализ показателя</h3><button class="btn" id="drillClose">✕</button></div>\n    <div class="mbody" id="drillBody"></div>\n  </div>\n</div>\n\n<div id="busy"><div class="spin"></div><div class="bt" id="busyT">Читаю файл…</div></div>\n<div id="statusline">Готов к загрузке файлов</div>\n<footer>Vision · данные читаются локально в браузере · кликните на любую карточку или показатель, чтобы увидеть драйвер-анализ</footer>\n\n<input type="file" id="f1" accept=".xlsx,.xls" style="position:fixed;top:-100px;left:-100px;width:1px;height:1px;opacity:0" onchange="onFilePicked(1,this)"/>\n<input type="file" id="f2" accept=".xlsx,.xls" style="position:fixed;top:-100px;left:-100px;width:1px;height:1px;opacity:0" onchange="onFilePicked(2,this)"/>\n\n';
+  container.innerHTML = '<header>\n  <div class="wrap hbar">\n    <div class="logo">V</div>\n    <div><h1>Vision</h1><small>дашборд директора магазина · период из загруженного отчёта</small></div>\n    <div class="hspace">\n      <span class="fchip" id="ch2"><span class="dot"></span><span id="ch2t">Статистика — не загружена</span></span>\n      <span class="fchip" id="ch1"><span class="dot"></span><span id="ch1t">План-факт — не загружен</span></span>\n      <button class="btn" data-vision-file="2">⬆ Статистика</button>\n      <button class="btn" data-vision-file="1">⬆ План-факт</button>\n    </div>\n  </div>\n</header>\n\n<section id="hero">\n  <div class="wrap">\n    <div class="lead">\n      <h2><em>Vision</em> — весь магазин на одном экране</h2>\n      <p>Загрузите «Статистику расширенную» (обязательно) и «Рейтинг / план-факт» (прогнозы, дневная динамика, ассортимент). Каждый показатель кликабелен — внутри драйвер-дерево: за счёт чего магазин растёт или отстаёт.</p>\n    </div>\n    <div class="drops">\n      <div class="drop" id="d2">\n        <h3>📗 Файл 2 · Статистика (расширенная) ГМ</h3>\n        <p>Вкладка «статистика расширенная»: ТО, ВП, наценка, чеки, средний чек, м², остатки, SKU — план/факт и прошлый год.</p>\n        <div class="st" id="dst2"></div>\n      </div>\n      <div class="drop" id="d1">\n        <h3>📘 Файл 1 · Рейтинг и план-факт</h3>\n        <p>Прогнозы, прирост МТМ, LFL, дневные план/факт/прогноз по ТО и чекам, продажи по товарным группам.</p>\n        <div class="st" id="dst1"></div>\n      </div>\n    </div>\n  </div>\n</section>\n\n<main id="app" class="wrap hidden">\n  <div class="cbar">\n    <div class="field"><label>Поиск магазина</label><input id="storeQ" placeholder="Начните вводить…" style="width:220px"/></div>\n    <div class="field"><label>Магазин</label><select id="storeSel"></select></div>\n    <div class="field"><label>Сравнивать с</label>\n      <select id="mode">\n        <option value="net">Вся сеть</option>\n        <option value="fo">Мой федеральный округ</option>\n        <option value="reg">Мой регион</option>\n        <option value="lfl">Моя LFL-группа</option>\n        <option value="sim">Похожие магазины</option>\n        <option value="custom">Произвольная выборка</option>\n      </select>\n    </div>\n    <div class="field"><label>Выборка</label><button class="btn" id="customBtn">🎯 <span id="customLbl">Собрать выборку</span></button></div>\n    <div class="tags" id="tags"></div>\n  </div>\n  <div class="tabs" id="tabs"></div>\n  <section id="view"></section>\n</main>\n\n<div class="modal" id="customM">\n  <div class="mbox">\n    <div class="mhead"><h3>Произвольная выборка для сравнения</h3><button class="btn" id="mclose">✕</button></div>\n    <div class="mbody">\n      <input id="msearch" placeholder="Поиск по названию, региону, округу…"/>\n      <div class="mlist" id="mlist"></div>\n    </div>\n    <div class="mfoot">\n      <span class="cnt" id="mcnt"></span>\n      <div style="display:flex;gap:8px">\n        <button class="btn" id="mclear">Очистить</button>\n        <button class="btn" id="mapply" style="background:var(--acc);border-color:var(--acc);color:#fff">Применить</button>\n      </div>\n    </div>\n  </div>\n</div>\n\n<div class="modal" id="drillM">\n  <div class="mbox wide">\n    <div class="mhead"><h3 id="drillTitle">Анализ показателя</h3><button class="btn" id="drillClose">✕</button></div>\n    <div class="mbody" id="drillBody"></div>\n  </div>\n</div>\n\n<div id="busy"><div class="spin"></div><div class="bt" id="busyT">Читаю файл…</div></div>\n<div id="statusline">Готов к загрузке файлов</div>\n<footer>Vision · данные читаются локально в браузере · кликните на любую карточку или показатель, чтобы увидеть драйвер-анализ</footer>\n\n<input type="file" id="f1" accept=".xlsx,.xls" style="position:fixed;top:-100px;left:-100px;width:1px;height:1px;opacity:0"/>\n<input type="file" id="f2" accept=".xlsx,.xls" style="position:fixed;top:-100px;left:-100px;width:1px;height:1px;opacity:0"/>\n\n';
   
   var doc = document;
   var mainDoc = document;
@@ -43,7 +43,7 @@ function loadWorkbook(w,f){
   vStatus('Читаю «'+f.name+'»…');
   if(typeof XLSX==='undefined'){
     showBusy(false);
-    vStatus('Библиотека XLSX не загрузилась — проверьте интернет и обновите страницу',true);
+    vStatus('Библиотека XLSX не загрузилась — проверьте папку lib и обновите страницу',true);
     return;
   }
   var rd=new FileReader();
@@ -140,7 +140,7 @@ var M={
   progTO:{l:'Прогноз ТО',u:'тыс ₽',d:0,h:1},
   progFul:{l:'Прогноз выполнения ТО',u:'%',d:1,h:1},
   to25:{l:'ТО 2025',u:'тыс ₽',d:0,h:0},
-  growthTO:{l:'Прирост ТО к 2025',u:'%',d:1,h:1},
+  growthTO:{l:'Прирост ТО к прошлому году',u:'%',d:1,h:1},
   growthMoM:{l:'Прирост ТО МТМ',u:'%',d:1,h:1},
   lflMoM:{l:'LFL прирост МТМ',u:'%',d:1,h:1},
   vp:{l:'Валовая прибыль',u:'тыс ₽',d:0,h:1},
@@ -163,16 +163,16 @@ var M={
   avgCheck:{l:'Средний чек',u:'₽',d:0,h:1},
   planAvgCheck:{l:'План ср. чека',u:'₽',d:0,h:0},
   fulAvgCheck:{l:'Выполнение плана чека',u:'%',d:1,h:1},
-  avgCheck25:{l:'Средний чек 2025',u:'₽',d:0,h:0},
+  avgCheck25:{l:'Средний чек прошлому году',u:'₽',d:0,h:0},
   growthAvgCheck:{l:'Прирост среднего чека',u:'%',d:1,h:1},
   avgPrice:{l:'Средняя цена товара',u:'₽',d:0,h:0},
   avgPrice25:{l:'Цена товара 2025',u:'₽',d:0,h:0},
   growthAvgPrice:{l:'Прирост цены',u:'%',d:1,h:0},
   vpPerCheck:{l:'ВП на чек',u:'₽',d:0,h:1},
-  vpPerCheck25:{l:'ВП на чек 2025',u:'₽',d:0,h:0},
+  vpPerCheck25:{l:'ВП на чек прошлому году',u:'₽',d:0,h:0},
   growthVPCheck:{l:'Прирост ВП на чек',u:'%',d:1,h:1},
   qty:{l:'Продано штук',u:'шт',d:0,h:1},
-  qty25:{l:'Штук 2025',u:'шт',d:0,h:0},
+  qty25:{l:'Штук прошлому году',u:'шт',d:0,h:0},
   growthQty:{l:'Прирост штук',u:'%',d:1,h:1},
   qtyPerCheck:{l:'Штук в чеке',u:'шт',d:2,h:1},
   qtyPerCheck25:{l:'Штук в чеке 2025',u:'шт',d:2,h:0},
@@ -499,6 +499,11 @@ function aggregate(L){
     for(i=0;i<vs.length;i++){a+=vs[i];}
     return a/vs.length;
   }
+  function ratio(numerator, denominator, multiplier) {
+    var rows=L.filter(function(x){return typeof x[numerator]==='number' && isFinite(x[numerator]) && typeof x[denominator]==='number' && isFinite(x[denominator]);});
+    var a=0,b=0; rows.forEach(function(x){a+=x[numerator];b+=x[denominator];});
+    return rows.length && b ? a/b*multiplier : null;
+  }
   var to=S('to'),to25=S('to25'),vp=S('vp'),vp25=S('vp25'),ss=S('ss'),ss25=S('ss25');
   var qty=S('qty'),qty25=S('qty25'),ch=S('checks'),ch25=S('checks25');
   var pTO=S('planTO'),pVP=S('planVP'),pCH=S('planChecks');
@@ -506,24 +511,22 @@ function aggregate(L){
   var stock=S('stock'),sku=S('sku');
   var days=avg('days')||30;
   var A={n:n};
-  A.planTO=pTO/n;A.to=to/n;A.to25=to25/n;A.vp=vp/n;A.vp25=vp25/n;A.ss=ss/n;A.ss25=ss25/n;
-  A.qty=qty/n;A.qty25=qty25/n;A.checks=ch/n;A.checks25=ch25/n;A.planVP=pVP/n;A.planChecks=pCH/n;
-  A.areaTotal=aT/n;A.areaTrade=aTr/n;A.areaTrade25=aTr25/n;A.stock=stock/n;A.sku=sku/n;A.days=days;
-  A.fulTO=pTO?to/pTO*100:null;
-  A.fulVP=pVP?vp/pVP*100:null;
-  A.fulChecks=pCH?ch/pCH*100:null;
+  ['planTO','to','to25','vp','vp25','ss','ss25','qty','qty25','checks','checks25','planVP','planChecks','areaTotal','areaTrade','areaTrade25','stock','sku'].forEach(function(k){A[k]=avg(k);}); A.days=days;
+  A.fulTO=ratio('to','planTO',100);
+  A.fulVP=ratio('vp','planVP',100);
+  A.fulChecks=ratio('checks','planChecks',100);
   A.growthTO=to25?(to/to25-1)*100:null;
   A.growthVP=vp25?(vp/vp25-1)*100:null;
   A.growthSS=ss25?(ss/ss25-1)*100:null;
   A.growthQty=qty25?(qty/qty25-1)*100:null;
   A.growthChecks=ch25?(ch/ch25-1)*100:null;
-  A.shareVP=to?vp/to*100:null;
-  A.markup=ss?vp/ss*100:null;
-  A.avgCheck=ch?to*1000/ch:null;
-  A.avgCheck25=ch25?to25*1000/ch25:null;
+  A.shareVP=ratio('vp','to',100);
+  A.markup=ratio('vp','ss',100);
+  A.avgCheck=ratio('to','checks',1000);
+  A.avgCheck25=ratio('to25','checks25',1000);
   A.growthAvgCheck=(A.avgCheck&&A.avgCheck25)?(A.avgCheck/A.avgCheck25-1)*100:null;
-  A.avgPrice=qty?to*1000/qty:null;
-  A.avgPrice25=qty25?to25*1000/qty25:null;
+  A.avgPrice=ratio('to','qty',1000);
+  A.avgPrice25=ratio('to25','qty25',1000);
   A.growthAvgPrice=(A.avgPrice&&A.avgPrice25)?(A.avgPrice/A.avgPrice25-1)*100:null;
   A.vpPerCheck=ch?vp*1000/ch:null;
   A.vpPerCheck25=ch25?vp25*1000/ch25:null;
@@ -532,21 +535,22 @@ function aggregate(L){
   A.qtyPerCheck25=ch25?qty25/ch25:null;
   A.growthQtyCheck=(A.qtyPerCheck&&A.qtyPerCheck25)?(A.qtyPerCheck/A.qtyPerCheck25-1)*100:null;
   A.toPerM2=aTr?to*1000/aTr/days:null;
-  A.toPerM225=aTr25?to25*1000/aTr25/days:null;
+  var days25=avg('days25')||days;
+  A.toPerM225=aTr25?to25*1000/aTr25/days25:null;
   A.growthTOM2=(A.toPerM2&&A.toPerM225)?(A.toPerM2/A.toPerM225-1)*100:null;
   A.vpPerM2=aTr?vp*1000/aTr/days:null;
-  A.vpPerM225=aTr25?vp25*1000/aTr25/days:null;
+  A.vpPerM225=aTr25?vp25*1000/aTr25/days25:null;
   A.growthVPM2=(A.vpPerM2&&A.vpPerM225)?(A.vpPerM2/A.vpPerM225-1)*100:null;
   A.skuPerM2=aTr?sku/aTr:null;
   A.fillTrade=aTr?stock/aTr:null;
   A.fillTotal=aT?stock/aT:null;
   A.turnDays=(ss>0&&days>0)?stock/(ss/days):null;
-  A.planAvgCheck=avg('planAvgCheck');
-  A.fulAvgCheck=avg('fulAvgCheck');
+  A.planAvgCheck=pCH?pTO*1000/pCH:null;
+  A.fulAvgCheck=A.planAvgCheck>0?A.avgCheck/A.planAvgCheck*100:null;
   A.progTO=avg('progTO');
-  A.progFul=avg('progFul');
+  A.progFul=ratio('progTO','planTO',100);
   A.progVP=avg('progVP');
-  A.progFulVP=avg('progFulVP');
+  A.progFulVP=ratio('progVP','planVP',100);
   A.growthMoM=avg('growthMoM');
   A.lflMoM=avg('lflMoM');
   return A;
@@ -732,7 +736,7 @@ window.vIngest=function(w,wb,fname){
 };
 
 function cbox(id,h){
-  if(!HAS_CHART){return '<div class="chartbox '+(h||'')+'"><div class="nodata">Chart.js не загрузился — проверьте интернет и обновите страницу</div></div>';}
+  if(!HAS_CHART){return '<div class="chartbox '+(h||'')+'"><div class="nodata">Chart.js не загрузился — проверьте папку lib и обновите страницу</div></div>';}
   return '<div class="chartbox '+(h||'')+'"><canvas id="'+id+'"></canvas></div>';
 }
 function dynItem(label,my,net,reg){
@@ -760,7 +764,7 @@ function posStrip(keys){
   }
   h+='</div>';
   h+='<div class="dynstrip">'
-    +dynItem('Прирост ТО к 2025',st.growthTO,N?N.growthTO:null,R?R.growthTO:null)
+    +dynItem('Прирост ТО к прошлому году',st.growthTO,N?N.growthTO:null,R?R.growthTO:null)
     +dynItem('Прирост МТМ (к пред. месяцу)',st.growthMoM,N?N.growthMoM:null,R?R.growthMoM:null)
     +dynItem('LFL прирост МТМ',st.lflMoM,N?N.lflMoM:null,R?R.lflMoM:null)
     +'</div>';
@@ -821,7 +825,7 @@ function matrixHTML(spec){
     +'<span class="mut">Объёмные показатели уровня — средний магазин группы; коэффициенты — взвешенно. Клик по строке — драйвер-анализ.</span></div>';
 }
 var DOMAINS=[
-  ['Выручка','#EFF4FF','#155EEF','to',[['to','ТО за месяц'],['fulTO','Выполнение плана'],['progFul','Прогноз выполнения'],['growthTO','Прирост к 2025']]],
+  ['Выручка','#EFF4FF','#155EEF','to',[['to','ТО за месяц'],['fulTO','Выполнение плана'],['progFul','Прогноз выполнения'],['growthTO','Прирост к прошлому году']]],
   ['Прибыль','#ECFDF3','#079455','vp',[['vp','Валовая прибыль'],['fulVP','Выполнение плана ВП'],['markup','Наценка'],['shareVP','Доля ВП в ТО'],['growthVP','Прирост ВП']]],
   ['Трафик','#F4F3FF','#7A5AF8','checks',[['checks','Чеки за месяц'],['fulChecks','Выполнение плана чеков'],['growthChecks','Прирост чеков']]],
   ['Чек и цена','#FFFAEB','#B54708','avgCheck',[['avgCheck','Средний чек'],['growthAvgCheck','Прирост чека'],['qtyPerCheck','Штук в чеке'],['avgPrice','Средняя цена товара']]],
@@ -829,15 +833,15 @@ var DOMAINS=[
   ['Запасы и полка','#F2F4F7','#475467','stock',[['stock','Остатки по себестоимости'],['sku','Остаток SKU'],['skuPerM2','SKU на м²'],['fillTrade','Наполнение зала']]]
 ];
 var SPEC_TP=[['to','ТО факт'],['planTO','План ТО'],['fulTO','Выполнение плана ТО'],['progTO','Прогноз ТО'],['progFul','Прогноз выполнения ТО'],
- ['to25','ТО август 2025'],['growthTO','Прирост ТО к 2025'],['growthMoM','Прирост к пред. месяцу'],['lflMoM','LFL прирост МТМ'],
+ ['to25','ТО август 2025'],['growthTO','Прирост ТО к прошлому году'],['growthMoM','Прирост к пред. месяцу'],['lflMoM','LFL прирост МТМ'],
  ['vp','ВП факт'],['planVP','План ВП'],['fulVP','Выполнение плана ВП'],['progVP','Прогноз ВП'],['progFulVP','Прогноз выполнения ВП'],
- ['vp25','ВП август 2025'],['growthVP','Прирост ВП к 2025'],['shareVP','Доля ВП в ТО'],['markup','Наценка'],
+ ['vp25','ВП август 2025'],['growthVP','Прирост ВП к прошлому году'],['shareVP','Доля ВП в ТО'],['markup','Наценка'],
  ['ss','Себестоимость'],['ss25','Себестоимость 2025'],['growthSS','Прирост себестоимости']];
 var SPEC_TR=[['checks','Чеки факт'],['planChecks','План чеков'],['fulChecks','Выполнение плана чеков'],['checks25','Чеки 2025'],['growthChecks','Прирост чеков'],
- ['avgCheck','Средний чек'],['planAvgCheck','План среднего чека'],['fulAvgCheck','Выполнение плана чека'],['avgCheck25','Средний чек 2025'],['growthAvgCheck','Прирост среднего чека'],
+ ['avgCheck','Средний чек'],['planAvgCheck','План среднего чека'],['fulAvgCheck','Выполнение плана чека'],['avgCheck25','Средний чек прошлому году'],['growthAvgCheck','Прирост среднего чека'],
  ['avgPrice','Средняя цена товара'],['avgPrice25','Средняя цена 2025'],['growthAvgPrice','Прирост цены'],
- ['vpPerCheck','ВП на один чек'],['vpPerCheck25','ВП на чек 2025'],['growthVPCheck','Прирост ВП на чек'],
- ['qty','Продано штук'],['qty25','Продано штук 2025'],['growthQty','Прирост штук'],
+ ['vpPerCheck','ВП на один чек'],['vpPerCheck25','ВП на чек прошлому году'],['growthVPCheck','Прирост ВП на чек'],
+ ['qty','Продано штук'],['qty25','Продано штук прошлому году'],['growthQty','Прирост штук'],
  ['qtyPerCheck','Штук в чеке'],['qtyPerCheck25','Штук в чеке 2025'],['growthQtyCheck','Прирост наполнения чека']];
 var SPEC_M2=[['toPerM2','ТО на м² в день'],['toPerM225','ТО на м² 2025'],['growthTOM2','Прирост ТО на м²'],
  ['vpPerM2','ВП на м² в день'],['vpPerM225','ВП на м² 2025'],['growthVPM2','Прирост ВП на м²'],
@@ -853,10 +857,10 @@ function renderOverview(){
   var h='<div class="pagehead"><h2>Обзор: как идёт магазин</h2><p>Все ключевые показатели · клик по карточке или строке — драйвер-анализ «за счёт чего»</p></div>';
   h+=posStrip([['to','Товарооборот'],['vp','Валовая прибыль'],['markup','Наценка'],['checks','Чеки'],['avgCheck','Средний чек'],['toPerM2','ТО на м²']]);
   var k='';
-  k+=kpiCard('Товарооборот','to',fmtM(st.to),[chip(st.to,AB?AB.to:null,1),'<span class="pill b">план '+fmt(st.planTO,0)+'</span>','к 2025 '+sgnTxt(st.growthTO,null)],{v:st.fulTO||0,c:fulColor(st.fulTO)});
-  k+=kpiCard('Валовая прибыль','vp',fmtM(st.vp),[chip(st.vp,AB?AB.vp:null,1),'доля ВП '+fmt(st.shareVP,1)+'%','к 2025 '+sgnTxt(st.growthVP,null)],{v:st.fulVP||0,c:fulColor(st.fulVP)});
+  k+=kpiCard('Товарооборот','to',fmtM(st.to),[chip(st.to,AB?AB.to:null,1),'<span class="pill b">план '+fmt(st.planTO,0)+'</span>','к прошлому году '+sgnTxt(st.growthTO,null)],{v:st.fulTO||0,c:fulColor(st.fulTO)});
+  k+=kpiCard('Валовая прибыль','vp',fmtM(st.vp),[chip(st.vp,AB?AB.vp:null,1),'доля ВП '+fmt(st.shareVP,1)+'%','к прошлому году '+sgnTxt(st.growthVP,null)],{v:st.fulVP||0,c:fulColor(st.fulVP)});
   k+=kpiCard('Наценка','markup',fmt(st.markup,1)+'%',[chip(st.markup,AB?AB.markup:null,1),'сеть '+fmt(netA?netA.markup:null,1)+'%'],null);
-  k+=kpiCard('Чеки','checks',fmt(st.checks),[chip(st.checks,AB?AB.checks:null,1),'план '+fmt(st.planChecks,0),'к 2025 '+sgnTxt(st.growthChecks,null)],{v:st.fulChecks||0,c:fulColor(st.fulChecks)});
+  k+=kpiCard('Чеки','checks',fmt(st.checks),[chip(st.checks,AB?AB.checks:null,1),'план '+fmt(st.planChecks,0),'к прошлому году '+sgnTxt(st.growthChecks,null)],{v:st.fulChecks||0,c:fulColor(st.fulChecks)});
   k+=kpiCard('Средний чек','avgCheck',fmt(st.avgCheck)+' ₽',[chip(st.avgCheck,AB?AB.avgCheck:null,1),'план '+fmt(st.planAvgCheck)+' ₽'],null);
   h+='<div class="kpis">'+k+'</div>';
   h+='<div class="domains">';
@@ -895,7 +899,7 @@ function renderTP(){
   var st=selS();
   var d=F1.dailyTO[norm(st.name)];
   var h='<div class="pagehead"><h2>Товарооборот и прибыль</h2><p>План / факт / прогноз, накопительный итог, полная матрица сравнений</p></div>';
-  h+=posStrip([['to','Товарооборот'],['fulTO','Выполнение плана'],['vp','Валовая прибыль'],['markup','Наценка'],['growthTO','Прирост к 2025']]);
+  h+=posStrip([['to','Товарооборот'],['fulTO','Выполнение плана'],['vp','Валовая прибыль'],['markup','Наценка'],['growthTO','Прирост к прошлому году']]);
   h+='<div class="grid g2"><div class="card"><h3>📈 План / факт / прогноз по дням</h3><div class="sub">Товарооборот, тыс ₽</div>'
     +(d?cbox('c_tp_dyn'):'<div class="nodata">Загрузите файл 1 — лист «ТО План-Факт»</div>')+'</div>'
     +'<div class="card"><h3>📊 Накопительный итог</h3><div class="sub">ТО нарастающим итогом: план, факт, прогноз</div>'
@@ -1175,7 +1179,7 @@ function drawOverviewCharts(st,dk,AB){
   var netA=aggregate(ST.stores);
   mkChart('c_dyn2',{
     type:'bar',
-    data:{labels:['Прирост к 2025','МТМ','LFL МТМ'],datasets:[
+    data:{labels:['Прирост к прошлому году','МТМ','LFL МТМ'],datasets:[
       {label:'Я',data:[st.growthTO,st.growthMoM,st.lflMoM],backgroundColor:'#155EEF',borderRadius:6,barPercentage:0.7},
       {label:'Регион',data:[regA?regA.growthTO:null,regA?regA.growthMoM:null,regA?regA.lflMoM:null],backgroundColor:'#7A5AF8',borderRadius:6,barPercentage:0.7},
       {label:'Сеть',data:[netA?netA.growthTO:null,netA?netA.growthMoM:null,netA?netA.lflMoM:null],backgroundColor:'#cbd5e1',borderRadius:6,barPercentage:0.7}
@@ -1476,7 +1480,7 @@ function drillTo(st,N,R){
     var parts=[];
     parts.push({l:'Трафик (чеки '+sgnPct(st.growthChecks)+')',v:gC/gT*100,c:'a'});
     parts.push({l:'Средний чек ('+sgnPct(st.growthAvgCheck)+')',v:gA/gT*100,c:'b'});
-    h+='<div class="dsec">Вклад факторов в прирост ТО к 2025 ('+fmt(st.growthTO,1)+'%)</div>'+fbar(parts);
+    h+='<div class="dsec">Вклад факторов в прирост ТО к прошлому году ('+fmt(st.growthTO,1)+'%)</div>'+fbar(parts);
   }
   if(gQ!=null&&gP!=null&&gA){
     var parts2=[];
@@ -1488,8 +1492,8 @@ function drillTo(st,N,R){
   if(gT!=null){
     var driver='';
     if(gC!=null&&gA!=null){driver=Math.abs(gC)>=Math.abs(gA)?'трафика (чеки)':'среднего чека';}
-    if(gT>=0){txt='ТО растёт на '+fmt(st.growthTO,1)+'% к 2025';}
-    else{txt='ТО падает на '+fmt(Math.abs(st.growthTO),1)+'% к 2025';}
+    if(gT>=0){txt='ТО растёт на '+fmt(st.growthTO,1)+'% к прошлому году';}
+    else{txt='ТО падает на '+fmt(Math.abs(st.growthTO),1)+'% к прошлому году';}
     if(driver){txt+=' — в основном за счёт '+driver+'.';}else{txt+='.';}
     var netG=N?N.growthTO:null;
     var regG=R?R.growthTO:null;
@@ -1520,14 +1524,14 @@ function drillVp(st,N,R){
     var parts=[];
     parts.push({l:'Рост оборота ('+sgnPct(st.growthTO)+')',v:gTO/gVP*100,c:'a'});
     parts.push({l:'Изменение доли ВП ('+(share25!=null?fmt(st.shareVP-share25,1):'0')+' п.п.)',v:(gVP-gTO)/gVP*100,c:'c'});
-    h+='<div class="dsec">Вклад факторов в прирост ВП к 2025 ('+fmt(st.growthVP,1)+'%)</div>'+fbar(parts);
+    h+='<div class="dsec">Вклад факторов в прирост ВП к прошлому году ('+fmt(st.growthVP,1)+'%)</div>'+fbar(parts);
   }
   var txt;
-  if(st.growthVP>=0){txt='ВП растёт на '+fmt(st.growthVP,1)+'% к 2025.';}
-  else{txt='ВП падает на '+fmt(Math.abs(st.growthVP),1)+'% к 2025.';}
+  if(st.growthVP>=0){txt='ВП растёт на '+fmt(st.growthVP,1)+'% к прошлому году.';}
+  else{txt='ВП падает на '+fmt(Math.abs(st.growthVP),1)+'% к прошлому году.';}
   if(st.growthVP!=null&&st.growthTO!=null){
     if(Math.abs(st.growthVP)>Math.abs(st.growthTO)){
-      txt+=' Прибыль растёт быстрее оборота — доля ВП расширяется ('+fmt(st.shareVP,1)+'% против '+fmt(share25,1)+'% в 2025): работает наценка.';
+      txt+=' Прибыль растёт быстрее оборота — доля ВП расширяется ('+fmt(st.shareVP,1)+'% против '+fmt(share25,1)+'% в прошлом году): работает наценка.';
     }else{
       txt+=' Оборот растёт быстрее прибыли — доля ВП сжимается: проверьте наценку и себестоимость.';
     }
@@ -1551,7 +1555,7 @@ function drillMarkup(st,N,R){
     var parts=[];
     parts.push({l:'Цена ('+sgnPct(st.growthAvgPrice)+')',v:gPrice*100,c:'a'});
     parts.push({l:'Себестоимость/шт ('+sgnPct(gSS*100)+')',v:gSS*100,c:'d'});
-    h+='<div class="dsec">«Ножницы»: динамика цены против себестоимости к 2025</div>'+fbar(parts);
+    h+='<div class="dsec">«Ножницы»: динамика цены против себестоимости к прошлому году</div>'+fbar(parts);
   }
   var txt='Наценка '+fmt(st.markup,1)+'%.';
   if(N&&N.markup!=null){
@@ -1592,11 +1596,11 @@ function drillChecks(st,N,R){
     +dRow('Чеки за месяц','шт',st.checks,N?N.checks:null,R?R.checks:null,0,' шт',1,false)
     +dRow('Чеков в день','среднее',st.checks/days,(N&&N.checks)?N.checks/days:null,(R&&R.checks)?R.checks/days:null,0,'',1,true)
     +dRow('Выполнение плана чеков','%',st.fulChecks,N?N.fulChecks:null,R?R.fulChecks:null,1,'%',1,true)
-    +dRow('Прирост чеков к 2025','%',st.growthChecks,N?N.growthChecks:null,R?R.growthChecks:null,1,'%',1,true)
+    +dRow('Прирост чеков к прошлому году','%',st.growthChecks,N?N.growthChecks:null,R?R.growthChecks:null,1,'%',1,true)
     +'</div>';
   var txt;
-  if(st.growthChecks>=0){txt='Чеки растут на '+fmt(st.growthChecks,1)+'% к 2025.';}
-  else{txt='Чеки падают на '+fmt(Math.abs(st.growthChecks),1)+'% к 2025.';}
+  if(st.growthChecks>=0){txt='Чеки растут на '+fmt(st.growthChecks,1)+'% к прошлому году.';}
+  else{txt='Чеки падают на '+fmt(Math.abs(st.growthChecks),1)+'% к прошлому году.';}
   if(N&&N.growthChecks!=null){
     if(st.growthChecks>=N.growthChecks){txt+=' Трафик растёт быстрее сети — магазин набирает покупателей.';}
     else{txt+=' Трафик растёт медленнее сети ('+fmt(N.growthChecks,1)+'%) — узкое место в воронке привлечения.';}
@@ -1651,12 +1655,12 @@ function openDrill(key){
   var bits=[];
   if(planK&&st[planK]!=null){bits.push('<span class="pill b">план '+vfmt(planK,st[planK])+'</span>');}
   if(fulK&&st[fulK]!=null){bits.push('<span class="pill '+(st[fulK]>=100?'g':'r')+'">выполнение '+fmt(st[fulK],1)+'%</span>');}
-  if(y25K&&st[y25K]!=null){bits.push('<span class="pill n">2025: '+vfmt(y25K,st[y25K])+'</span>');}
+  if(y25K&&st[y25K]!=null){bits.push('<span class="pill n">Прошлый год: '+vfmt(y25K,st[y25K])+'</span>');}
   if(gK&&st[gK]!=null){
     var gcls;
     if(M[gK].h>0){gcls=st[gK]>=0?'g':'r';}
     else{gcls=st[gK]<=0?'g':'r';}
-    bits.push('<span class="pill '+gcls+'">к 2025 '+sgnPct(st[gK])+'</span>');
+    bits.push('<span class="pill '+gcls+'">к прошлому году '+sgnPct(st[gK])+'</span>');
   }
   body+='<div class="dsum"><div><div class="l">'+M[key].l+' · '+M[key].u+'</div><div class="v mono">'+vfmt(key,my)+'</div></div><div class="s">'+bits.join(' ')+'</div></div>';
   var lvls=[['Сеть',L.net],['Мой ФО',L.fo],['Мой регион',L.reg],['Моя LFL',L.lfl],['Похожие',L.sim]];

@@ -34,7 +34,7 @@ modalBox.addEventListener('click', e => {
   const zr = e.target.closest('[data-zone-rename]');
   if (zr) {
     const z = zones.find(x => x.id === zr.dataset.zoneRename);
-    if (z) { const name = prompt('Новое название зоны:', z.name); if (name && name.trim()) { z.name = name.trim(); persistZones(); openZoneModal(z.id); } }
+    if (z) { const name = prompt('Новое название зоны:', z.name); if (name && name.trim()) { z.name = name.trim(); if (!persistZones()) return; openZoneModal(z.id); } }
     return;
   }
   const zd = e.target.closest('[data-zone-delete]');
@@ -46,7 +46,7 @@ modalBox.addEventListener('click', e => {
       const before = megas.length;
       megas = megas.filter(m => m.zoneIds.length >= 2);
       zoneSel.delete(z.id);
-      persistZones(); closeModal(); renderZones();
+      if (!persistZones()) return; closeModal(); renderZones();
       showStatus(`Зона «${z.name}» удалена.${megas.length < before ? ' Мега-зона с <2 зон распущена.' : ''}`, 'success');
     }
     return;
@@ -59,7 +59,7 @@ modalBox.addEventListener('click', e => {
       const add = [...new Set(ta.value.split(/[\s,;]+/).map(s => s.trim()).filter(Boolean))];
       const fresh = add.filter(c => !z.codes.includes(c));
       z.codes.push(...fresh);
-      persistZones(); openZoneModal(z.id);
+      if (!persistZones()) return; openZoneModal(z.id);
       showStatus(fresh.length ? `➕ Добавлено в зону: ${fresh.length} артикулов.` : 'Все указанные артикулы уже в зоне.', fresh.length ? 'success' : 'error');
     }
     return;
@@ -71,7 +71,7 @@ modalBox.addEventListener('click', e => {
       const code = zrc.dataset.zoneRemoveCode;
       z.codes = z.codes.filter(c => String(c).trim() !== code);
       if (z.refill) delete z.refill[code];
-      persistZones(); openZoneModal(z.id);
+      if (!persistZones()) return; openZoneModal(z.id);
     }
     return;
   }
@@ -84,7 +84,7 @@ modalBox.addEventListener('click', e => {
       const code = tc.dataset.trialCommit;
       if (!z.codes.includes(code)) z.codes.push(code);
       trialCodes = trialCodes.filter(c => c !== code);
-      persistZones(); openZoneModal(z.id);
+      if (!persistZones()) return; openZoneModal(z.id);
     }
     return;
   }
@@ -125,23 +125,30 @@ modalBox.addEventListener('change', e => {
     if (z) {
       z.refill = z.refill || {};
       z.refill[t.dataset.refillCode] = Math.max(0, +t.value || 0);
-      persistZones();
+      if (!persistZones()) return;
       updateZoneStatuses();
     }
   }
 });
 
+const markdownDates = {};
 // ── Переключение режимов ──
 segBtns.forEach(btn => {
   btn.addEventListener('click', () => {
     if (btn.dataset.mode === currentMode) return;
+    if (["kлизма", "sellto"].includes(currentMode)) markdownDates[currentMode] = filterDateInput.value;
     currentMode = btn.dataset.mode;
     segBtns.forEach(b => b.classList.toggle('active', b === btn));
     dateGroup.classList.toggle('hidden', !(currentMode === 'kлизма' || currentMode === 'sellto'));
     browsePanel.classList.toggle('hidden', currentMode !== 'browse');
     dateLabel.textContent = currentMode === 'sellto' ? '2. Дата окончания продаж (до)' : '2. Дата ввоза (до)';
-    filterDateInput.value = '';
+    filterDateInput.value = markdownDates[currentMode] || '';
     hideAllPages();
+    if (currentMode === 'director') {
+      window.DirectorApp?.render();
+      updateBtn();
+      return;
+    }
     if (currentMode === 'vision') {
       visionCard.classList.remove('hidden');
       updateBtn();
@@ -175,7 +182,7 @@ segBtns.forEach(btn => {
   });
 });
 
-filterDateInput.addEventListener('change', updateBtn);
+filterDateInput.addEventListener('change', () => { markdownDates[currentMode] = filterDateInput.value; updateBtn(); });
 
 // ── Раздел «3SKU» (suadela): ленивая активация при первом открытии ──
 let sku3Ready = false;
@@ -186,8 +193,7 @@ function activateSku3() {
   }
   if (!sku3Ready) {
     window.sku3RenderMarkup();
-    try { window.sku3Init(); } catch (e) { console.error(e); showStatus('❌ Ошибка инициализации 3SKU: ' + e.message, 'error'); }
-    sku3Ready = true;
+    try { window.sku3Init(); sku3Ready = true; } catch (e) { console.error(e); showStatus('❌ Ошибка инициализации 3SKU: ' + e.message, 'error'); return; }
   }
   const card = document.getElementById('sku3Card');
   if (card) card.classList.remove('hidden');
@@ -233,8 +239,7 @@ function activateR29() {
   }
   if (!r29Ready) {
     window.r29RenderMarkup();
-    try { window.r29Init(); } catch (e) { console.error(e); showStatus('❌ Ошибка инициализации R29: ' + e.message, 'error'); }
-    r29Ready = true;
+    try { window.r29Init(); r29Ready = true; } catch (e) { console.error(e); showStatus('❌ Ошибка инициализации R29: ' + e.message, 'error'); return; }
   }
   const card = document.getElementById('r29Card');
   if (card) card.classList.remove('hidden');
@@ -247,6 +252,7 @@ processBtn.addEventListener('click', async () => {
   processBtn.disabled = true;
   await new Promise(r => setTimeout(r, 40));
 
+  if (currentMode === 'director') { window.DirectorApp?.render(); updateBtn(); return; }
   if (currentMode === 'vision') { visionCard.classList.remove('hidden'); processBtn.disabled = false; return; }
   if (currentMode === 'sku3')   { activateSku3(); processBtn.disabled = false; return; }
   if (currentMode === 'sales')  { activateSales(); processBtn.disabled = false; return; }
@@ -260,6 +266,7 @@ processBtn.addEventListener('click', async () => {
     processBtn.disabled = false;
     return;
   }
+  if (currentMode === 'verify')   { hideAllPages(); renderVerify(); processBtn.disabled = false; return; }
   if (currentMode === 'top100')   { hideAllPages(); renderTop100(); processBtn.disabled = false; return; }
   if (currentMode === 'dash')     { hideAllPages(); renderDashboard(); processBtn.disabled = false; return; }
   if (currentMode === 'analysis') { hideAllPages(); renderAnalysis(); processBtn.disabled = false; return; }
@@ -267,7 +274,8 @@ processBtn.addEventListener('click', async () => {
   if (currentMode === 'gifts')    { hideAllPages(); renderGifts(); processBtn.disabled = false; return; }
 
   const today = new Date(); today.setHours(0, 0, 0, 0);
-  const targetDate = new Date(filterDateInput.value);
+  const targetDate = parseDate(filterDateInput.value);
+  if (!targetDate) { showStatus('❌ Укажите корректную дату', 'error'); updateBtn(); return; }
   targetDate.setHours(23, 59, 59, 999);
 
   let daysLeft = 0, filtered = [], modeName = '';
@@ -278,24 +286,17 @@ processBtn.addEventListener('click', async () => {
       if (!importDate || importDate > targetDate) return false;
       const excl = String(row['категория искл. из автоуценки'] ?? '').toLowerCase().trim();
       if (excl.includes('не клизма')) return false;
-      return true;
+      return num(row['склад кол']) > 0;
     });
     const today = new Date(); today.setHours(0, 0, 0, 0);
-    const klizmaDay = cfg.klizmaDay || 15;
-    const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
-    const actualDay = Math.min(klizmaDay, daysInMonth);
-    let deadline = new Date(today.getFullYear(), today.getMonth(), actualDay);
-    if (today > deadline) {
-      const nextMonthDays = new Date(today.getFullYear(), today.getMonth() + 2, 0).getDate();
-      deadline = new Date(today.getFullYear(), today.getMonth() + 1, Math.min(klizmaDay, nextMonthDays));
-    }
-    daysLeft = Math.max(0, Math.ceil((deadline - today) / 86400000));
+    const deadline = SoldieRules.klizmaDeadline(today);
+    daysLeft = SoldieRules.daysBetween(today, deadline);
     modeName = 'Клизма';
   } else {
     filtered = rawData.filter(row => {
       const salesEnd = parseDate(row['дата окончания продаж']);
       if (!salesEnd || salesEnd > targetDate) return false;
-      return true;
+      return num(row['склад кол']) > 0;
     });
     daysLeft = Math.max(0, Math.ceil((targetDate - today) / 86400000));
     modeName = 'Продать до';
@@ -309,8 +310,8 @@ processBtn.addEventListener('click', async () => {
   hideAllPages();
   renderTable(filtered, 'md', daysLeft);
   resultEl.classList.remove('hidden');
-  resultTitle.textContent = `${modeName} — ${filtered.length.toLocaleString('ru-RU')} артикулов, дедлайн через ${daysLeft} дн.`;
-  showStatus(`✅ Режим: ${modeName}. Найдено: ${filtered.length.toLocaleString('ru-RU')} артикулов.\nДо дедлайна: ${daysLeft} дн.\nВверху — живые итоги: как уценка влияет на валовую прибыль.`, 'success');
+  resultTitle.textContent = `${modeName} — ${filtered.length.toLocaleString('ru-RU')} артикулов${currentMode === 'kлизма' ? ', дедлайн через ' + daysLeft + ' дн.' : ' · сроки рассчитаны по каждому товару'}`;
+  showStatus(`✅ Режим: ${modeName}. Найдено: ${filtered.length.toLocaleString('ru-RU')} артикулов.\n${currentMode === 'kлизма' ? 'До дедлайна: ' + daysLeft + ' дн.' : 'Просроченные товары выделены красным.'}\nВверху — живые итоги: как уценка влияет на валовую прибыль.`, 'success');
   processBtn.disabled = false;
 });
 
@@ -330,3 +331,9 @@ if (typeof Chart === 'undefined') {
   showStatus('⚠️ Не найден файл lib/chart.umd.min.js — графики работать не будут. Скачайте с https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js и положите в папку lib/.', 'error');
 }
 updateBtn();
+
+// Standalone entry links open their corresponding section in the shared application.
+const entryMode = location.hash.slice(1);
+if (['r29', 'sku3', 'sales', 'vision', 'director'].includes(entryMode)) switchMode(entryMode);
+
+if (currentMode === "vision") { hideAllPages(); visionCard.classList.remove("hidden"); }

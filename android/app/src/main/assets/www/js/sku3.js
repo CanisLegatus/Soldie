@@ -116,8 +116,21 @@
     return s3idbOpen().then(function (db) {
       self.db = db;
       self.useIdb = true;
-      return self.loadFromDb();
-    }).catch(function (err) {
+      return self.loadFromDb().then(function () {
+        var raw;
+        try { raw = localStorage.getItem(self.fallbackKey); } catch (e) { return; }
+        if (!raw) return;
+        var fallback;
+        try { fallback = JSON.parse(raw); } catch (e) { throw new Error('Повреждено резервное хранилище. Восстановите JSON.'); }
+        if (!Array.isArray(fallback.sales)) return;
+        if (self.meta && (!fallback.lastSaved || fallback.lastSaved <= (self.meta.lastSaved || ''))) return;
+        var previousDays = Array.from(self.chunks.keys());
+        self.replaceAllSales(fallback.sales);
+        return self.save(fallback, Array.from(self.chunks.keys()), previousDays.filter(function(day){return !self.chunks.has(day);})).then(function(saved){
+          if (!saved) throw new Error('Не удалось перенести резервную историю в IndexedDB');
+        });
+      });
+    }, function (err) {
       console.warn('[sku3] IndexedDB недоступен, возврат к localStorage:', err && err.message);
       self.useIdb = false;
       return self.loadFromFallback();
@@ -136,8 +149,9 @@
       var dates = self.meta.salesIndex.filter(function (d) { return typeof d === 'string'; });
       return Promise.all(dates.map(function (d) {
         return s3idbGet(self.db, s3chunkKey(d)).then(function (v) {
-          self.chunks.set(d, Array.isArray(v) ? v : []);
-        }).catch(function () { self.chunks.set(d, []); });
+          if (!Array.isArray(v)) throw new Error('Не найден день истории: ' + d);
+          self.chunks.set(d, v);
+        });
       }));
     });
   };
@@ -146,10 +160,11 @@
     try {
       var raw = localStorage.getItem(this.fallbackKey);
       this.meta = raw ? JSON.parse(raw) : null;
-    } catch (e) { this.meta = null; }
+    } catch (e) { throw new Error('Не удалось прочитать резервное хранилище: ' + e.message); }
     this.chunks.clear();
     if (this.meta && Array.isArray(this.meta.salesIndex)) {
-      this.meta.salesIndex.forEach(function (d) { this.chunks.set(d, []); }, this);
+      if (Array.isArray(this.meta.sales)) this.replaceAllSales(this.meta.sales);
+      else if (this.meta.salesIndex.length) throw new Error('В старом резервном хранилище нет продаж. Восстановите историю из JSON или отчётов.');
     }
   };
 
@@ -168,29 +183,29 @@
      Операции записи сериализуются в одной очереди (pending). */
   S3Store.prototype.save = function (state, dirtyDates, removedDates) {
     var self = this;
-    var meta = Object.assign({}, state, { sales: undefined, salesIndex: null });
-    delete meta.sales;
-    meta.salesIndex = Array.from(this.chunks.keys()).sort();
-
+    // Snapshot now: queued writes must not observe later edits to state/chunks.
+    var meta = JSON.parse(JSON.stringify(Object.assign({}, state, { sales: undefined, salesIndex: Array.from(this.chunks.keys()).sort() })));
+    var chunks = new Map();
+    this.chunks.forEach(function (rows, day) {
+      if (!self.useIdb || (dirtyDates || []).includes(day)) chunks.set(day, JSON.parse(JSON.stringify(rows)));
+    });
     var op = function () {
       if (self.useIdb && self.db) {
-        var tasks = [s3idbPut(self.db, S3STORE_META_KEY, meta)];
-        (removedDates || []).forEach(function (d) { tasks.push(s3idbDelete(self.db, [s3chunkKey(d)])); });
-        (dirtyDates || []).forEach(function (d) {
-          if (self.chunks.has(d)) tasks.push(s3idbPut(self.db, s3chunkKey(d), self.chunks.get(d)));
+        return new Promise(function (resolve, reject) {
+          var tx = self.db.transaction('kv', 'readwrite'), store = tx.objectStore('kv');
+          try {
+          store.put(meta, S3STORE_META_KEY);
+          (removedDates || []).forEach(function (day) { store.delete(s3chunkKey(day)); });
+          (dirtyDates || []).forEach(function (day) { if (chunks.has(day)) store.put(chunks.get(day), s3chunkKey(day)); });
+          } catch (error) { tx.abort(); reject(error); return; }
+          tx.oncomplete = function () { self.meta = meta; resolve(true); };
+          tx.onerror = tx.onabort = function () { reject(tx.error || new Error('Транзакция прервана')); };
         });
-        return Promise.all(tasks).then(function () { self.meta = meta; });
       }
-      // Fallback: localStorage (компактный стейт без чанков продаж по дням)
-      try {
-        localStorage.setItem(self.fallbackKey, JSON.stringify(meta));
-        self.meta = meta;
-      } catch (e) {
-        var ex = new Error('localStorage переполнен');
-        ex.name = 'QuotaExceededError';
-        throw ex;
-      }
-      return Promise.resolve();
+      var sales = []; chunks.forEach(function (rows) { rows.forEach(function(row) { sales.push(row); }); });
+      localStorage.setItem(self.fallbackKey, JSON.stringify(Object.assign({}, meta, { sales: sales })));
+      self.meta = meta;
+      return true;
     };
 
     this.pending = this.pending.then(op, op);
@@ -204,6 +219,7 @@
       } else if (typeof showToast === 'function') {
         showToast('Ошибка сохранения данных: ' + (e && e.message ? e.message : e), 'error');
       }
+      return false;
     });
   };
 
@@ -290,13 +306,14 @@
       });
     }
 
-    var migrated = migrateState(legacyState); // дефолты + версия, sales может быть очищен (prevVersion < STATE_VERSION)
+    var migrated = migrateState(legacyState); // defaults and schema version; preserve history
     store.replaceAllSales(migrated.sales || []);
     return store.saveLegacyBackup(pendingRaw)
       .then(function () { return store.save(migrated, Array.from(store.chunks.keys()), []); })
-      .then(function () { return { loaded: true, freshMigration: true, hadData: !!(migrated.sales && migrated.sales.length) }; })
+      .then(function (saved) { if (!saved) throw new Error('Миграция не сохранена'); return { loaded: true, freshMigration: true, hadData: !!(migrated.sales && migrated.sales.length) }; })
       .catch(function (e) {
         console.error('[sku3] Миграция в IndexedDB не удалась:', e);
+        store.meta = migrated;
         return { loaded: true, migrationFailed: true };
       });
   }
@@ -304,7 +321,8 @@
   // ── Стили suadela (scope: #sku3Card) ──
   var sku3Style = document.createElement('style');
   sku3Style.id = 'sku3Styles';
-  sku3Style.textContent = `:root{
+  sku3Style.textContent = `
+#sku3Card{
   --bg:#f5f7fb;
   --card:#ffffff;
   --text:#0f172a;
@@ -321,221 +339,221 @@
 }
 #sku3Card *{box-sizing:border-box}
 #sku3Card [hidden]{display:none !important}
-h1, h2, h3, h4{margin:0}
-button, input, select, textarea{font:inherit}
-.container{max-width:1440px;margin:0 auto;padding:0 24px}
-.header{
+#sku3Card h1, #sku3Card h2, #sku3Card h3, #sku3Card h4{margin:0}
+#sku3Card button, #sku3Card input, #sku3Card select, #sku3Card textarea{font:inherit}
+#sku3Card .container{max-width:1440px;margin:0 auto;padding:0 24px}
+#sku3Card .header{
   position:sticky;top:0;z-index:60;
   background:rgba(255,255,255,.82);
   backdrop-filter:blur(14px);
   border-bottom:1px solid var(--border);
 }
-.header-inner{
+#sku3Card .header-inner{
   max-width:1440px;margin:auto;padding:14px 24px;
   display:flex;align-items:center;justify-content:space-between;gap:18px;flex-wrap:wrap;
 }
-.brand{display:flex;align-items:center;gap:14px;min-width:260px}
-.logo{
+#sku3Card .brand{display:flex;align-items:center;gap:14px;min-width:260px}
+#sku3Card .logo{
   width:48px;height:48px;border-radius:16px;display:grid;place-items:center;
   background:linear-gradient(135deg,var(--primary),var(--primary-2) 60%,var(--accent));
   color:#fff;font-weight:800;font-size:14px;letter-spacing:.02em;box-shadow:0 10px 22px rgba(79,70,229,.24);
 }
-.brand h1{font-size:20px;font-weight:800;letter-spacing:-.02em}
-.brand .muted{font-size:13px;color:var(--muted);margin-top:2px}
-.header-stats{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-.mini-stat{
+#sku3Card .brand h1{font-size:20px;font-weight:800;letter-spacing:-.02em}
+#sku3Card .brand .muted{font-size:13px;color:var(--muted);margin-top:2px}
+#sku3Card .header-stats{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+#sku3Card .mini-stat{
   background:#fff;border:1px solid var(--border);border-radius:14px;padding:8px 12px;min-width:104px;
   box-shadow:0 6px 18px rgba(15,23,42,.04)
 }
-.mini-stat span{display:block;font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.04em}
-.mini-stat strong{font-size:15px}
-.header-actions{display:flex;gap:10px;flex-wrap:wrap}
-.btn{
+#sku3Card .mini-stat span{display:block;font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+#sku3Card .mini-stat strong{font-size:15px}
+#sku3Card .header-actions{display:flex;gap:10px;flex-wrap:wrap}
+#sku3Card .btn{
   border:1px solid var(--border);background:#fff;color:var(--text);
   padding:10px 15px;border-radius:13px;font-weight:700;cursor:pointer;
   transition:transform .16s ease, box-shadow .16s ease, background .16s ease, opacity .16s;
   white-space:nowrap;
 }
-.btn:hover{transform:translateY(-1px);box-shadow:0 10px 22px rgba(15,23,42,.08)}
-.btn:active{transform:translateY(0)}
-.btn:disabled{opacity:.55;cursor:not-allowed;transform:none;box-shadow:none}
-.btn-primary{
+#sku3Card .btn:hover{transform:translateY(-1px);box-shadow:0 10px 22px rgba(15,23,42,.08)}
+#sku3Card .btn:active{transform:translateY(0)}
+#sku3Card .btn:disabled{opacity:.55;cursor:not-allowed;transform:none;box-shadow:none}
+#sku3Card .btn-primary{
   background:linear-gradient(135deg,var(--primary),var(--primary-2));
   border:none;color:#fff;box-shadow:0 10px 24px rgba(79,70,229,.22)
 }
-.btn-success{background:linear-gradient(135deg,#10b981,#059669);border:none;color:#fff}
-.btn-danger{background:#fff5f5;border-color:#fecaca;color:#b91c1c}
-.btn-ghost{background:transparent}
-.btn-sm{padding:7px 11px;border-radius:10px;font-size:13px}
-.tabs-wrap{max-width:1440px;margin:20px auto 0;padding:0 24px}
-.tabs{display:inline-flex;gap:6px;padding:6px;background:rgba(255,255,255,.75);border:1px solid var(--border);border-radius:999px;box-shadow:var(--shadow)}
-.tab-btn{
+#sku3Card .btn-success{background:linear-gradient(135deg,#10b981,#059669);border:none;color:#fff}
+#sku3Card .btn-danger{background:#fff5f5;border-color:#fecaca;color:#b91c1c}
+#sku3Card .btn-ghost{background:transparent}
+#sku3Card .btn-sm{padding:7px 11px;border-radius:10px;font-size:13px}
+#sku3Card .tabs-wrap{max-width:1440px;margin:20px auto 0;padding:0 24px}
+#sku3Card .tabs{display:inline-flex;gap:6px;padding:6px;background:rgba(255,255,255,.75);border:1px solid var(--border);border-radius:999px;box-shadow:var(--shadow)}
+#sku3Card .tab-btn{
   border:none;background:transparent;color:var(--muted);padding:10px 20px;border-radius:999px;
   font-weight:800;cursor:pointer;transition:.18s
 }
-.tab-btn.active{background:linear-gradient(135deg,var(--primary),var(--primary-2));color:#fff;box-shadow:0 10px 20px rgba(79,70,229,.2)}
-main{max-width:1440px;margin:0 auto;padding:18px 24px 70px}
-.alerts-wrap{max-width:1440px;margin:16px auto 0;padding:0 24px}
-.alert{
+#sku3Card .tab-btn.active{background:linear-gradient(135deg,var(--primary),var(--primary-2));color:#fff;box-shadow:0 10px 20px rgba(79,70,229,.2)}
+#sku3Card main{max-width:1440px;margin:0 auto;padding:18px 24px 70px}
+#sku3Card .alerts-wrap{max-width:1440px;margin:16px auto 0;padding:0 24px}
+#sku3Card .alert{
   display:flex;gap:14px;align-items:center;justify-content:space-between;
   border-radius:18px;padding:14px 16px;margin-bottom:12px;border:1px solid transparent;
 }
-.alert strong{display:block;margin-bottom:3px}
-.alert small, .alert div>div{font-size:13px;line-height:1.45}
-.alert-danger{background:#fff1f2;border-color:#fecdd3;color:#9f1239}
-.alert-warning{background:#fffbeb;border-color:#fde68a;color:#92400e}
-.alert-info{background:#eff6ff;border-color:#bfdbfe;color:#1e40af}
-.alert-success{background:#ecfdf5;border-color:#a7f3d0;color:#065f46}
-.alert-actions{display:flex;gap:8px;flex-wrap:wrap}
-.grid{display:grid;gap:18px;margin-bottom:18px}
-.grid-2{grid-template-columns:repeat(2,minmax(0,1fr))}
-.grid-3{grid-template-columns:repeat(3,minmax(0,1fr))}
-.grid-4{grid-template-columns:repeat(4,minmax(0,1fr))}
-.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-bottom:18px}
-.card{
+#sku3Card .alert strong{display:block;margin-bottom:3px}
+#sku3Card .alert small, #sku3Card .alert div>div{font-size:13px;line-height:1.45}
+#sku3Card .alert-danger{background:#fff1f2;border-color:#fecdd3;color:#9f1239}
+#sku3Card .alert-warning{background:#fffbeb;border-color:#fde68a;color:#92400e}
+#sku3Card .alert-info{background:#eff6ff;border-color:#bfdbfe;color:#1e40af}
+#sku3Card .alert-success{background:#ecfdf5;border-color:#a7f3d0;color:#065f46}
+#sku3Card .alert-actions{display:flex;gap:8px;flex-wrap:wrap}
+#sku3Card .grid{display:grid;gap:18px;margin-bottom:18px}
+#sku3Card .grid-2{grid-template-columns:repeat(2,minmax(0,1fr))}
+#sku3Card .grid-3{grid-template-columns:repeat(3,minmax(0,1fr))}
+#sku3Card .grid-4{grid-template-columns:repeat(4,minmax(0,1fr))}
+#sku3Card .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-bottom:18px}
+#sku3Card .card{
   background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
   box-shadow:var(--shadow);padding:20px;position:relative;overflow:hidden
 }
-.card h3{font-size:18px;font-weight:800;margin-bottom:16px;letter-spacing:-.01em}
-.section-title{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px}
-.muted{color:var(--muted)}
-.small{font-size:12px}
-.kpi-top{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
-.kpi-label{font-size:13px;color:var(--muted);font-weight:700}
-.kpi-icon{width:40px;height:40px;border-radius:14px;display:grid;place-items:center;background:#eef2ff;color:var(--primary);font-size:18px}
-.kpi-card.success .kpi-icon{background:#ecfdf5;color:#059669}
-.kpi-card.warning .kpi-icon{background:#fffbeb;color:#b45309}
-.kpi-card.danger .kpi-icon{background:#fff1f2;color:#e11d48}
-.kpi-card.info .kpi-icon{background:#eff6ff;color:#2563eb}
-.kpi-value{font-size:30px;line-height:1.1;font-weight:800;letter-spacing:-.03em;margin-bottom:6px}
-.kpi-sub{font-size:13px;color:var(--muted);line-height:1.45;margin-bottom:12px}
-.progress{position:relative;height:10px;background:#eef2ff;border-radius:999px;overflow:hidden}
-.progress-fill{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--primary),var(--accent))}
-.progress-fill.success{background:linear-gradient(90deg,#10b981,#34d399)}
-.progress-fill.warning{background:linear-gradient(90deg,#f59e0b,#fbbf24)}
-.progress-fill.danger{background:linear-gradient(90deg,#ef4444,#f87171)}
-.threshold-marker{position:absolute;top:0;bottom:0;width:2px;background:rgba(15,23,42,.32)}
-.chart-box{position:relative;height:300px}
-.table-wrap{overflow-x:auto}
-table.data-table{width:100%;border-collapse:collapse;min-width:860px}
-.data-table th, .data-table td{padding:12px 10px;border-bottom:1px solid var(--border);text-align:left;vertical-align:middle}
-.data-table th{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:800;background:#f8fafc;position:sticky;top:0}
-.data-table td.num, .data-table th.num{text-align:right;font-variant-numeric:tabular-nums}
-.data-table tbody tr:hover{background:#f8fafc}
-.data-table tfoot td{font-weight:800;background:#f8fafc}
-.clickable{cursor:pointer}
-tr.selected{background:#eef2ff !important}
-.seller-cell strong{display:block}
-.chip{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;font-size:12px;font-weight:800;border:1px solid transparent;white-space:nowrap}
-.chip-neutral{background:#f1f5f9;color:#475569;border-color:#e2e8f0}
-.chip-primary{background:#eef2ff;color:#4338ca;border-color:#c7d2fe}
-.chip-success{background:#ecfdf5;color:#047857;border-color:#a7f3d0}
-.chip-warning{background:#fffbeb;color:#b45309;border-color:#fde68a}
-.chip-danger{background:#fff1f2;color:#be123c;border-color:#fecdd3}
-.chip-info{background:#eff6ff;color:#1d4ed8;border-color:#bfdbfe}
-.badge{display:inline-flex;align-items:center;gap:4px;padding:4px 8px;border-radius:999px;font-size:11px;font-weight:800;border:1px solid transparent;margin:2px 2px 0 0;white-space:nowrap}
-.badge-gold{background:#fff7ed;color:#c2410c;border-color:#fed7aa}
-.badge-silver{background:#f8fafc;color:#475569;border-color:#e2e8f0}
-.badge-bronze{background:#fffbeb;color:#92400e;border-color:#fde68a}
-.badge-primary{background:#eef2ff;color:#4338ca;border-color:#c7d2fe}
-.badge-success{background:#ecfdf5;color:#047857;border-color:#a7f3d0}
-.badge-warning{background:#fffbeb;color:#b45309;border-color:#fde68a}
-.badge-accent{background:#ecfeff;color:#0e7490;border-color:#a5f3fc}
-.badge-neutral{background:#f1f5f9;color:#475569;border-color:#e2e8f0}
-.sku-card{display:flex;flex-direction:column;gap:14px}
-.sku-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
-.sku-title{font-size:18px;font-weight:800;margin:8px 0 4px}
-.big-number{font-size:32px;font-weight:800;letter-spacing:-.03em}
-.big-number span{font-size:15px;color:var(--muted);font-weight:700}
-.stat-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
-.stat-box{background:#f8fafc;border:1px solid var(--border);border-radius:14px;padding:10px}
-.stat-box span{display:block;font-size:11px;color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px}
-.stat-box strong{font-size:15px}
-.leader-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
-.leader-card{border:1px solid var(--border);border-radius:18px;padding:18px;background:linear-gradient(180deg,#fff,#f8fafc)}
-.leader-medal{font-size:30px;margin-bottom:10px}
-.heatmap-wrap{overflow:auto;padding-bottom:8px}
-.heatmap{display:grid;gap:4px;min-width:1000px}
-.heat-name{
+#sku3Card .card h3{font-size:18px;font-weight:800;margin-bottom:16px;letter-spacing:-.01em}
+#sku3Card .section-title{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px}
+#sku3Card .muted{color:var(--muted)}
+#sku3Card .small{font-size:12px}
+#sku3Card .kpi-top{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+#sku3Card .kpi-label{font-size:13px;color:var(--muted);font-weight:700}
+#sku3Card .kpi-icon{width:40px;height:40px;border-radius:14px;display:grid;place-items:center;background:#eef2ff;color:var(--primary);font-size:18px}
+#sku3Card .kpi-card.success .kpi-icon{background:#ecfdf5;color:#059669}
+#sku3Card .kpi-card.warning .kpi-icon{background:#fffbeb;color:#b45309}
+#sku3Card .kpi-card.danger .kpi-icon{background:#fff1f2;color:#e11d48}
+#sku3Card .kpi-card.info .kpi-icon{background:#eff6ff;color:#2563eb}
+#sku3Card .kpi-value{font-size:30px;line-height:1.1;font-weight:800;letter-spacing:-.03em;margin-bottom:6px}
+#sku3Card .kpi-sub{font-size:13px;color:var(--muted);line-height:1.45;margin-bottom:12px}
+#sku3Card .progress{position:relative;height:10px;background:#eef2ff;border-radius:999px;overflow:hidden}
+#sku3Card .progress-fill{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--primary),var(--accent))}
+#sku3Card .progress-fill.success{background:linear-gradient(90deg,#10b981,#34d399)}
+#sku3Card .progress-fill.warning{background:linear-gradient(90deg,#f59e0b,#fbbf24)}
+#sku3Card .progress-fill.danger{background:linear-gradient(90deg,#ef4444,#f87171)}
+#sku3Card .threshold-marker{position:absolute;top:0;bottom:0;width:2px;background:rgba(15,23,42,.32)}
+#sku3Card .chart-box{position:relative;height:300px}
+#sku3Card .table-wrap{overflow-x:auto}
+#sku3Card table.data-table{width:100%;border-collapse:collapse;min-width:860px}
+#sku3Card .data-table th, #sku3Card .data-table td{padding:12px 10px;border-bottom:1px solid var(--border);text-align:left;vertical-align:middle}
+#sku3Card .data-table th{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:800;background:#f8fafc;position:sticky;top:0}
+#sku3Card .data-table td.num, #sku3Card .data-table th.num{text-align:right;font-variant-numeric:tabular-nums}
+#sku3Card .data-table tbody tr:hover{background:#f8fafc}
+#sku3Card .data-table tfoot td{font-weight:800;background:#f8fafc}
+#sku3Card .clickable{cursor:pointer}
+#sku3Card tr.selected{background:#eef2ff !important}
+#sku3Card .seller-cell strong{display:block}
+#sku3Card .chip{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;font-size:12px;font-weight:800;border:1px solid transparent;white-space:nowrap}
+#sku3Card .chip-neutral{background:#f1f5f9;color:#475569;border-color:#e2e8f0}
+#sku3Card .chip-primary{background:#eef2ff;color:#4338ca;border-color:#c7d2fe}
+#sku3Card .chip-success{background:#ecfdf5;color:#047857;border-color:#a7f3d0}
+#sku3Card .chip-warning{background:#fffbeb;color:#b45309;border-color:#fde68a}
+#sku3Card .chip-danger{background:#fff1f2;color:#be123c;border-color:#fecdd3}
+#sku3Card .chip-info{background:#eff6ff;color:#1d4ed8;border-color:#bfdbfe}
+#sku3Card .badge{display:inline-flex;align-items:center;gap:4px;padding:4px 8px;border-radius:999px;font-size:11px;font-weight:800;border:1px solid transparent;margin:2px 2px 0 0;white-space:nowrap}
+#sku3Card .badge-gold{background:#fff7ed;color:#c2410c;border-color:#fed7aa}
+#sku3Card .badge-silver{background:#f8fafc;color:#475569;border-color:#e2e8f0}
+#sku3Card .badge-bronze{background:#fffbeb;color:#92400e;border-color:#fde68a}
+#sku3Card .badge-primary{background:#eef2ff;color:#4338ca;border-color:#c7d2fe}
+#sku3Card .badge-success{background:#ecfdf5;color:#047857;border-color:#a7f3d0}
+#sku3Card .badge-warning{background:#fffbeb;color:#b45309;border-color:#fde68a}
+#sku3Card .badge-accent{background:#ecfeff;color:#0e7490;border-color:#a5f3fc}
+#sku3Card .badge-neutral{background:#f1f5f9;color:#475569;border-color:#e2e8f0}
+#sku3Card .sku-card{display:flex;flex-direction:column;gap:14px}
+#sku3Card .sku-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+#sku3Card .sku-title{font-size:18px;font-weight:800;margin:8px 0 4px}
+#sku3Card .big-number{font-size:32px;font-weight:800;letter-spacing:-.03em}
+#sku3Card .big-number span{font-size:15px;color:var(--muted);font-weight:700}
+#sku3Card .stat-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+#sku3Card .stat-box{background:#f8fafc;border:1px solid var(--border);border-radius:14px;padding:10px}
+#sku3Card .stat-box span{display:block;font-size:11px;color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px}
+#sku3Card .stat-box strong{font-size:15px}
+#sku3Card .leader-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+#sku3Card .leader-card{border:1px solid var(--border);border-radius:18px;padding:18px;background:linear-gradient(180deg,#fff,#f8fafc)}
+#sku3Card .leader-medal{font-size:30px;margin-bottom:10px}
+#sku3Card .heatmap-wrap{overflow:auto;padding-bottom:8px}
+#sku3Card .heatmap{display:grid;gap:4px;min-width:1000px}
+#sku3Card .heat-name{
   position:sticky;left:0;background:#fff;z-index:2;padding:6px 10px 6px 0;
   font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px
 }
-.heat-head{font-size:10px;font-weight:800;color:var(--muted);text-align:center;padding:4px 0}
-.heat-cell{
+#sku3Card .heat-head{font-size:10px;font-weight:800;color:var(--muted);text-align:center;padding:4px 0}
+#sku3Card .heat-cell{
   min-width:30px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;
   font-size:10px;font-weight:800;background:#f1f5f9;color:#94a3b8;border:1px solid transparent
 }
-.heat-cell.future{background:#f8fafc;color:#cbd5e1}
-.heat-cell.missing{background:repeating-linear-gradient(45deg,#fff1f2,#fff1f2 4px,#ffe4e6 4px,#ffe4e6 8px);color:#be123c}
-.heat-total{background:#eef2ff;color:#3730a3}
+#sku3Card .heat-cell.future{background:#f8fafc;color:#cbd5e1}
+#sku3Card .heat-cell.missing{background:repeating-linear-gradient(45deg,#fff1f2,#fff1f2 4px,#ffe4e6 4px,#ffe4e6 8px);color:#be123c}
+#sku3Card .heat-total{background:#eef2ff;color:#3730a3}
 #sku3Card .sku3-modal{position:fixed;inset:0;z-index:100;display:none;align-items:center;justify-content:center;padding:18px}
 #sku3Card .sku3-modal.open{display:flex}
 #sku3Card .sku3-modal-backdrop{position:absolute;inset:0;background:rgba(15,23,42,.46);backdrop-filter:blur(6px)}
-.sku3-modal-panel{
+#sku3Card .sku3-modal-panel{
   position:relative;background:#fff;border-radius:26px;box-shadow:0 28px 80px rgba(15,23,42,.24);
   width:min(1180px,100%);max-height:92vh;display:flex;flex-direction:column;overflow:hidden;
-  animation:modalIn .22s ease
+  animation:sku3ModalIn .22s ease
 }
 #sku3Card .sku3-modal-panel.medium{width:min(860px,100%)}
-@keyframes modalIn{from{opacity:0;transform:translateY(14px) scale(.98)}to{opacity:1;transform:none}}
+@keyframes sku3ModalIn{from{opacity:0;transform:translateY(14px) scale(.98)}to{opacity:1;transform:none}}
 #sku3Card .sku3-modal-header{padding:20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;gap:16px;align-items:center}
 #sku3Card .sku3-modal-header h2{font-size:22px;font-weight:800;letter-spacing:-.02em}
 #sku3Card .sku3-modal-body{padding:20px;overflow:auto}
 #sku3Card .sku3-modal-footer{padding:16px 20px;border-top:1px solid var(--border);background:#f8fafc;display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}
-.field{display:block;margin-bottom:14px}
-.field label{display:block;font-size:12px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px}
-.input,select,textarea{
+#sku3Card .field{display:block;margin-bottom:14px}
+#sku3Card .field label{display:block;font-size:12px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px}
+#sku3Card .input, #sku3Card select, #sku3Card textarea{
   width:100%;padding:11px 13px;border:1px solid var(--border);border-radius:13px;background:#fff;color:var(--text);
   outline:none;transition:border .16s, box-shadow .16s
 }
-.input:focus, select:focus, textarea:focus{border-color:#a5b4fc;box-shadow:0 0 0 4px rgba(79,70,229,.09)}
-textarea{min-height:92px;resize:vertical;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px}
-.settings-section{margin-bottom:26px}
-.settings-section h4{font-size:16px;font-weight:800;margin-bottom:12px}
-.settings-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px}
-.editor-card{border:1px solid var(--border);border-radius:18px;background:#f8fafc;padding:16px;margin-bottom:14px}
-.editor-card-top{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px}
-.employee-list{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
-.employee-chip{
+#sku3Card .input:focus, #sku3Card select:focus, #sku3Card textarea:focus{border-color:#a5b4fc;box-shadow:0 0 0 4px rgba(79,70,229,.09)}
+#sku3Card textarea{min-height:92px;resize:vertical;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px}
+#sku3Card .settings-section{margin-bottom:26px}
+#sku3Card .settings-section h4{font-size:16px;font-weight:800;margin-bottom:12px}
+#sku3Card .settings-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px}
+#sku3Card .editor-card{border:1px solid var(--border);border-radius:18px;background:#f8fafc;padding:16px;margin-bottom:14px}
+#sku3Card .editor-card-top{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px}
+#sku3Card .employee-list{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+#sku3Card .employee-chip{
   display:inline-flex;align-items:center;gap:8px;padding:8px 10px;border-radius:999px;
   background:#fff;border:1px solid var(--border);font-size:13px;font-weight:600
 }
-.employee-chip button{border:none;background:#f1f5f9;color:#64748b;width:22px;height:22px;border-radius:50%;cursor:pointer;font-weight:800}
-.add-row{display:flex;gap:10px;flex-wrap:wrap}
-.add-row .input{flex:1;min-width:220px}
-.checkbox{display:inline-flex;align-items:center;gap:8px;font-size:14px;font-weight:600;cursor:pointer}
-.checkbox input{width:18px;height:18px}
-.dropzone{
+#sku3Card .employee-chip button{border:none;background:#f1f5f9;color:#64748b;width:22px;height:22px;border-radius:50%;cursor:pointer;font-weight:800}
+#sku3Card .add-row{display:flex;gap:10px;flex-wrap:wrap}
+#sku3Card .add-row .input{flex:1;min-width:220px}
+#sku3Card .checkbox{display:inline-flex;align-items:center;gap:8px;font-size:14px;font-weight:600;cursor:pointer}
+#sku3Card .checkbox input{width:18px;height:18px}
+#sku3Card .dropzone{
   border:2px dashed #c7d2fe;border-radius:22px;background:#f8faff;padding:36px 20px;text-align:center;
   cursor:pointer;transition:.18s;margin-bottom:18px
 }
-.dropzone.drag{background:#eef2ff;border-color:var(--primary);transform:scale(1.005)}
-.dropzone strong{display:block;font-size:18px;margin-bottom:6px}
-.preview-card{border:1px solid var(--border);border-radius:18px;padding:16px;margin-bottom:14px;background:#fff}
-.preview-title{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
-.stat-chips{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
-.list-box{background:#f8fafc;border:1px solid var(--border);border-radius:14px;padding:12px;font-size:13px;line-height:1.5;max-height:190px;overflow:auto}
-.empty-state{text-align:center;padding:36px 20px;color:var(--muted)}
-.empty-state strong{display:block;font-size:20px;color:var(--text);margin-bottom:8px}
-.toast-container{position:fixed;right:20px;bottom:20px;z-index:200;display:flex;flex-direction:column;gap:10px;max-width:min(360px,calc(100vw - 40px))}
-.toast{
+#sku3Card .dropzone.drag{background:#eef2ff;border-color:var(--primary);transform:scale(1.005)}
+#sku3Card .dropzone strong{display:block;font-size:18px;margin-bottom:6px}
+#sku3Card .preview-card{border:1px solid var(--border);border-radius:18px;padding:16px;margin-bottom:14px;background:#fff}
+#sku3Card .preview-title{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+#sku3Card .stat-chips{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+#sku3Card .list-box{background:#f8fafc;border:1px solid var(--border);border-radius:14px;padding:12px;font-size:13px;line-height:1.5;max-height:190px;overflow:auto}
+#sku3Card .empty-state{text-align:center;padding:36px 20px;color:var(--muted)}
+#sku3Card .empty-state strong{display:block;font-size:20px;color:var(--text);margin-bottom:8px}
+#sku3Card .toast-container{position:fixed;right:20px;bottom:20px;z-index:200;display:flex;flex-direction:column;gap:10px;max-width:min(360px,calc(100vw - 40px))}
+#sku3Card .toast{
   background:#0f172a;color:#fff;padding:13px 16px;border-radius:16px;box-shadow:0 18px 40px rgba(15,23,42,.24);
   font-size:14px;font-weight:600;animation:toastIn .22s ease
 }
-.toast-success{background:#065f46}
-.toast-error{background:#9f1239}
-.toast-warning{background:#92400e}
+#sku3Card .toast-success{background:#065f46}
+#sku3Card .toast-error{background:#9f1239}
+#sku3Card .toast-warning{background:#92400e}
 @keyframes toastIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
-.note{font-size:12px;color:var(--muted);line-height:1.45}
-.hr{height:1px;background:var(--border);margin:18px 0}
+#sku3Card .note{font-size:12px;color:var(--muted);line-height:1.45}
+#sku3Card .hr{height:1px;background:var(--border);margin:18px 0}
 @media(max-width:1100px){
-.grid-3, .grid-4, .leader-grid{grid-template-columns:1fr}
-.grid-2{grid-template-columns:1fr}
+#sku3Card .grid-3, #sku3Card .grid-4, #sku3Card .leader-grid{grid-template-columns:1fr}
+#sku3Card .grid-2{grid-template-columns:1fr}
 }
 @media(max-width:760px){
-.container, .header-inner, .tabs-wrap, main, .alerts-wrap{padding-left:14px;padding-right:14px}
-.header-inner{align-items:flex-start}
-.kpi-value{font-size:25px}
+#sku3Card .container, #sku3Card .header-inner, #sku3Card .tabs-wrap, #sku3Card main, #sku3Card .alerts-wrap{padding-left:14px;padding-right:14px}
+#sku3Card .header-inner{align-items:flex-start}
+#sku3Card .kpi-value{font-size:25px}
 #sku3Card .sku3-modal{padding:0}
 #sku3Card .sku3-modal-panel{border-radius:0;max-height:100vh;width:100%}
 }`;
@@ -724,7 +742,7 @@ textarea{min-height:92px;resize:vertical;font-family:ui-monospace,SFMono-Regular
     <div class="sku3-modal-header">
       <div>
         <h2>Чеки вручную</h2>
-        <div class="muted small">Нужны для пенетрации и нагрузки на кассира</div>
+        <div class="muted small">Нужны для 3SKU на 100 чеков и нагрузки на кассира</div>
       </div>
       <button class="btn btn-sm" data-action="close-modal" data-modal="checksModal">Закрыть</button>
     </div>
@@ -777,7 +795,8 @@ let checksDraftDate = null;
 let dirtyDates = new Set();          // изменённые дни продаж (для точечной записи чанков)
 let removedDates = new Set();        // удалённые дни продаж (чанки удаляются из хранилища)
 let saveTimer = null;                // дебаунс фоновых сохранений
-let storeReady = false;              // данные догружены из хранилища
+let storeReady = false;
+let stateReadyPromise;              // данные догружены из хранилища
 let legacyPendingRaw = null;         // оригинальный blob старого ключа до подтверждения миграции
 const SAVE_DEBOUNCE_MS = 1500;
 
@@ -788,7 +807,7 @@ function init(){
   }
   bindEvents();
   showSkeleton('Загрузка данных…');
-  loadStateAsync().then(function(res){
+  stateReadyPromise = loadStateAsync().then(function(res){
     hideSkeleton();
     storeReady = true;
     renderAll();
@@ -797,15 +816,18 @@ function init(){
       showToast('Данные перенесены в новое хранилище (IndexedDB). Старая копия записей находится в разделе «Настройки → Данные и состояние».', 'info');
     }
     if (res && res.migrationFailed) {
-      showToast('Не удалось перенести данные в IndexedDB — используется прежнее хранение.', 'warning');
+      showToast('Не удалось сохранить перенос данных. История доступна в памяти, исходная копия сохранена. Выгрузите JSON.', 'warning');
     }
     if (migrationNote) showToast(migrationNote, 'warning');
+    window.dispatchEvent(new Event('sku3-data-changed'));
+    return true;
   }).catch(function(e){
     console.error('[sku3] Ошибка загрузки состояния:', e);
     hideSkeleton();
-    storeReady = true;
+    storeReady = false;
     renderAll();
     showToast('Ошибка загрузки сохранённых данных: ' + (e && e.message ? e.message : e), 'error');
+    return false;
   });
 }
 
@@ -886,24 +908,12 @@ function loadStateAsync(){
   });
 }
 
-/* Синхронная сборка «state» из кэша хранилища (meta + чанки).
-   Используется persist() и sku3Api.getState(), чтобы ссылки на объект
-   state оставались валидными для внешних потребителей (js/sales.js). */
-function syncStateFromStore(){
-  const fresh = s3store.getState();
-  if (!fresh) return state;
-  const newSales = fresh.sales;
-  delete fresh.sales;
-  Object.assign(state, fresh);
-  state.sales = newSales;
-  return state;
-}
-
 /* Сохранение состояния: meta — всегда, чанки продаж — только изменённые дни.
    mode='immediate' — запись сразу (важные события: импорт, настройки, сброс);
    mode='debounced' — фоновое сохранение с дебаунсом (renderAll). */
 function persist(mode){
-  state.lastSaved = new Date().toISOString();
+  if (!storeReady) return Promise.resolve(false);
+  const savedAt = new Date().toISOString();
   const d = Array.from(dirtyDates), r = Array.from(removedDates);
   dirtyDates = new Set(); removedDates = new Set();
 
@@ -917,9 +927,15 @@ function persist(mode){
   }
 
   if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
-  return s3store.save(state, d, r).then(function(){
-    syncStateFromStore();
+  return s3store.save(Object.assign({}, state, { lastSaved: savedAt }), d, r).then(function(saved){
+    if (!saved) {
+      d.forEach(x => { if (s3store.chunks.has(x)) dirtyDates.add(x); });
+      r.forEach(x => { if (!s3store.chunks.has(x)) removedDates.add(x); });
+      return false;
+    }
+    state.lastSaved = savedAt;
     refreshStorageUi();
+    return true;
   });
 }
 
@@ -971,7 +987,7 @@ function flushSku3Save(){
   if (dirtyDates.size || removedDates.size) {
     s3store.replaceAllSales(state.sales || []);
     dirtyDates = new Set(s3store.chunks.keys());
-    removedDates = new Set();
+    removedDates = new Set([...removedDates].filter(day => !s3store.chunks.has(day)));
   }
   persist('immediate');
 }
@@ -997,17 +1013,15 @@ function migrateState(st){
     enabled: sku.enabled !== false
   }));
 
-  if (prevVersion < STATE_VERSION) {
-    migrationNote = 'Парсер отчёта 1С исправлен: старые импортированные продажи удалены. Загрузите отчёты заново.';
-  }
+  if (prevVersion < STATE_VERSION) migrationNote = 'История старой версии сохранена. Проверьте её; при необходимости повторно загрузите исходные отчёты.';
 
   return {
     version: STATE_VERSION,
     settings,
-    sales: prevVersion >= STATE_VERSION && Array.isArray(st.sales) ? st.sales : [],
+    sales: Array.isArray(st.sales) ? st.sales : [],
     checks: Array.isArray(st.checks) ? st.checks : [],
-    imports: prevVersion >= STATE_VERSION && Array.isArray(st.imports) ? st.imports : [],
-    lastSaved: prevVersion >= STATE_VERSION ? (st.lastSaved || null) : null
+    imports: Array.isArray(st.imports) ? st.imports : [],
+    lastSaved: st.lastSaved || null
   };
 }
 
@@ -1036,7 +1050,7 @@ function skuSaleRange(sku, monthStart, monthEnd){
   const s = (sku.startDate && sku.startDate > monthStart) ? sku.startDate : monthStart;
   const e = (sku.endDate && sku.endDate < monthEnd) ? sku.endDate : monthEnd;
   if (s === monthStart && e === monthEnd) return null;
-  if (s > e) return null;
+  if (s > e) return { start:s, end:e };
   return { start:s, end:e };
 }
 function isDateInSkuRange(dateISO, range){ return !range || (dateISO >= range.start && dateISO <= range.end); }
@@ -1118,18 +1132,9 @@ function displayNameForKey(key){
 }
 function getActiveSellers(){
   const map = new Map();
-  state.settings.employees.forEach(e => {
-    const k = sellerKeyFromName(e.name);
-    if (k !== UNKNOWN_KEY && !map.has(k)) map.set(k, { key:k, name:e.name.trim() });
-  });
-  state.sales.forEach(r => {
-    const k = sellerKeyFromName(r.seller);
-    if (k !== UNKNOWN_KEY && !map.has(k)) map.set(k, { key:k, name:r.seller });
-  });
-  state.checks.forEach(c => {
-    if (c.seller === STORE_KEY) return;
-    const k = sellerKeyFromName(c.seller);
-    if (k !== UNKNOWN_KEY && !map.has(k)) map.set(k, { key:k, name:c.seller });
+  state.settings.employees.forEach(employee => {
+    const key = sellerKeyFromName(employee.name);
+    if (key !== UNKNOWN_KEY && !map.has(key)) map.set(key, {key, name:employee.name.trim()});
   });
   return [...map.values()].sort((a,b) => a.name.localeCompare(b.name,'ru'));
 }
@@ -1160,21 +1165,19 @@ function blankSeller(key, name){
 }
 
 function distributeFund(entries, field, total, totalUnits, unitField){
-  entries.forEach(e => e[field] = 0);
-  if (total <= 0 || totalUnits <= 0) return;
-  const positive = entries.filter(e => (Number(e[unitField]) || 0) > 0);
-  if (!positive.length) return;
-  let allocated = 0;
-  positive.forEach((e, i) => {
-    if (i === positive.length - 1) {
-      e[field] = round2(total - allocated);
-    } else {
-      const share = (Number(e[unitField]) || 0) / totalUnits;
-      const val = round2(total * share);
-      e[field] = val;
-      allocated = round2(allocated + val);
-    }
+  entries.forEach(entry => entry[field] = 0);
+  const cents = Math.round(total * 100);
+  const positive = entries.filter(entry => Number(entry[unitField]) > 0);
+  const units = positive.reduce((sum, entry) => sum + Number(entry[unitField]), 0);
+  if (!(cents > 0) || !(units > 0)) return;
+  const shares = positive.map((entry, index) => {
+    const exact = cents * Number(entry[unitField]) / units;
+    return { entry, index, cents:Math.floor(exact), fraction:exact - Math.floor(exact) };
   });
+  let remainder = cents - shares.reduce((sum, share) => sum + share.cents, 0);
+  shares.sort((a,b) => b.fraction - a.fraction || a.index - b.index);
+  for (let index=0; remainder>0; index++, remainder--) shares[index % shares.length].cents++;
+  shares.forEach(share => share.entry[field] = share.cents / 100);
 }
 
 function computeMetrics(){
@@ -1236,6 +1239,7 @@ function computeMetrics(){
     const skuData = bySku[r.skuId];
     if (!skuData) return;
     const key = sellerKeyFromName(r.seller);
+    if (key === UNKNOWN_KEY || !findEmployeeByName(r.seller)) return;
     const seller = ensureSeller(key, r.seller);
     const revenue = Number(r.sum) || 0;
     skuData.units += qty;
@@ -1250,19 +1254,22 @@ function computeMetrics(){
 
   const checksBySeller = {};
   const checksDailyBySeller = {};
-  let explicitStoreChecks = 0, sellerChecksSum = 0;
+  const checksByDate = new Map();
   (state.checks || []).forEach(c => {
     if (!allDatesSet.has(c.date)) return;
     const val = Number(c.checks) || 0;
     if (val <= 0) return;
-    if (c.seller === STORE_KEY) { explicitStoreChecks += val; return; }
+    if (!checksByDate.has(c.date)) checksByDate.set(c.date, { explicit: null, sellers: 0 });
+    const dayChecks = checksByDate.get(c.date);
+    if (c.seller === STORE_KEY) { dayChecks.explicit = val; return; }
     const key = sellerKeyFromName(c.seller);
+    if (key === UNKNOWN_KEY || !findEmployeeByName(c.seller)) return;
     checksBySeller[key] = (checksBySeller[key] || 0) + val;
-    sellerChecksSum += val;
+    dayChecks.sellers += val;
     checksDailyBySeller[key] = checksDailyBySeller[key] || {};
     checksDailyBySeller[key][c.date] = (checksDailyBySeller[key][c.date] || 0) + val;
   });
-  const storeChecks = explicitStoreChecks > 0 ? explicitStoreChecks : sellerChecksSum;
+  const storeChecks = [...checksByDate.values()].reduce((sum, day) => sum + (day.explicit ?? day.sellers), 0);
 
   const skuMetrics = skuList.map((sku, idx) => {
     const data = bySku[sku.id] || { units:0, revenue:0, sellers:{}, byDate:{} };
@@ -1340,8 +1347,8 @@ function computeMetrics(){
     const projectedUnits = round2(sellerEntries.reduce((a, e) => a + (Number(e.projUnits) || 0), 0));
     const projectedAchievement = plan > 0 ? (projectedUnits / plan * 100) : 0;
     const projectedThresholdReached = plan > 0 && projectedUnits >= thresholdUnits;
-    const currentBase = round2(units * cashierRate);
-    const projectedBase = round2(projectedUnits * cashierRate);
+    const currentBase = round2(sellerEntries.reduce((sum, seller) => sum + seller.base, 0));
+    const projectedBase = round2(sellerEntries.reduce((sum, seller) => sum + seller.projBase, 0));
     const currentFund = (s.fundMode === 'cashiersByUnits' && thresholdReached) ? round2(units * fundRate) : 0;
     const projectedFund = (s.fundMode === 'cashiersByUnits' && projectedThresholdReached) ? round2(projectedUnits * fundRate) : 0;
 
@@ -1350,6 +1357,8 @@ function computeMetrics(){
     sellerEntries.forEach(e => {
       e.accrued = round2(e.base + e.fundCurrent);
       e.projAccrued = round2(e.projBase + e.fundProjected);
+      e.payable = SoldieRules.payout(e.accrued, minPayout);
+      e.projPayable = SoldieRules.payout(e.projAccrued, minPayout);
     });
 
     return {
@@ -1408,9 +1417,9 @@ function computeMetrics(){
         units: sm.units,
         base: sm.base,
         fundCurrent: sm.fundCurrent,
-        accrued: sm.accrued,
+        accrued: sm.accrued, payable: sm.payable,
         projUnits: sm.projUnits,
-        projAccrued: sm.projAccrued
+        projAccrued: sm.projAccrued, projPayable: sm.projPayable
       };
     });
   });
@@ -1424,10 +1433,10 @@ function computeMetrics(){
     seller.units = round2(seller.units);
     seller.projUnits = round2(seller.projUnits);
     seller.accrued = round2(seller.base + seller.fund);
-    seller.payable = seller.accrued >= minPayout ? seller.accrued : 0;
-    seller.shortfall = round2(Math.max(0, minPayout - seller.accrued));
+    seller.payable = round2(Object.values(seller.skuData).reduce((sum, sku) => sum + sku.payable, 0));
+    seller.shortfall = round2(Object.values(seller.skuData).reduce((sum, sku) => sum + (sku.payable > 0 ? 0 : Math.max(0, minPayout - sku.accrued)), 0));
     seller.projAccrued = round2(seller.projBase + seller.projFund);
-    seller.projPayable = seller.projAccrued >= minPayout ? seller.projAccrued : 0;
+    seller.projPayable = round2(Object.values(seller.skuData).reduce((sum, sku) => sum + sku.projPayable, 0));
     seller.penetration = seller.checks > 0 ? seller.units / seller.checks * 100 : null;
     seller.unitsPerCheck = seller.checks > 0 ? seller.units / seller.checks : null;
     seller.activeDays = Object.values(seller.daily).filter(v => v > 0).length;
@@ -1455,12 +1464,8 @@ function computeMetrics(){
   const requiredToPlan = Math.max(0, Math.ceil(planUnits - totalUnits));
   const maxDailySellerUnits = Math.max(0, ...sellers.map(x => x.maxDay));
   /* Темп и прогноз «нужно в день» считаем по фактическим дням продаж каждой позиции (учитывая периоды «с — по») */
-  const sumRemaining = skuMetrics.reduce((a,x) => a + x.skuRemainingDays, 0);
-  const sumRequired = skuMetrics.reduce((a,x) => a + x.requiredToPlan, 0);
-  const sumElapsed = skuMetrics.reduce((a,x) => a + x.skuElapsedDays, 0);
-  const sumUnitsForPace = skuMetrics.reduce((a,x) => a + x.units, 0);
-  const paceUnitsPerDay = sumElapsed > 0 ? sumUnitsForPace / sumElapsed : 0;
-  const totalsPerDayToPlan = sumRemaining > 0 ? sumRequired / sumRemaining : (sumRequired || 0);
+  const paceUnitsPerDay = skuMetrics.reduce((sum, sku) => sum + (sku.skuElapsedDays > 0 ? sku.units / sku.skuElapsedDays : 0), 0);
+  const totalsPerDayToPlan = skuMetrics.reduce((sum, sku) => sum + (sku.skuRemainingDays > 0 ? sku.requiredToPlan / sku.skuRemainingDays : 0), 0);
 
   let cum = 0;
   const dailySeries = allDates.map((d, i) => {
@@ -1514,6 +1519,8 @@ function computeMetrics(){
 /* ============================= 1C PARSER ============================= */
 
 function parseRussianDate(text){
+  const numeric = String(text).match(/\b(\d{1,2}\.\d{1,2}\.\d{4})\b/);
+  if (numeric) { const d = SoldieRules.date(numeric[1]); if (d) return toISO(d); }
   const m = String(text).match(/(\d{1,2})\s+([а-яёa-z]+)\s+(\d{4})/i);
   if (!m) return null;
   const day = parseInt(m[1], 10);
@@ -1521,7 +1528,8 @@ function parseRussianDate(text){
   const year = parseInt(m[3], 10);
   const idx = MONTH_STEMS.findIndex(st => word.startsWith(st));
   if (idx < 0 || day < 1 || day > 31 || year < 2000) return null;
-  return year + '-' + String(idx + 1).padStart(2,'0') + '-' + String(day).padStart(2,'0');
+  const iso = year + '-' + String(idx + 1).padStart(2,'0') + '-' + String(day).padStart(2,'0');
+  return SoldieRules.date(iso) ? iso : null;
 }
 
 function findReportDate(rows){
@@ -1659,7 +1667,7 @@ function extractRecords(rows, start, header, date){
     if (isLikelyArticle(label, knownArticles, pending)) {
       const useQty = qty != null ? qty : (pending ? pending.qty : 0);
       const useSum = sum != null ? sum : (pending ? pending.sum : 0);
-      if (useQty > 0) {
+      if (useQty !== 0) {
         raw.push({
           date: date || '',
           seller: currentSeller || '',
@@ -1673,7 +1681,7 @@ function extractRecords(rows, start, header, date){
       continue;
     }
 
-    if (qty != null && qty > 0) pending = { name: label, qty, sum: sum || 0 };
+    if (qty != null && qty !== 0) pending = { name: label, qty, sum: sum || 0 };
     else pending = null;
   }
 
@@ -1732,7 +1740,8 @@ async function parseSalesFile(file){
       if (!rows.length) continue;
       const date = findReportDate(rows);
       const header = findHeader(rows);
-      if (header || date) { chosen = { rows, date, header, sheetName }; break; }
+      if (header) { chosen = { rows, date, header, sheetName }; break; }
+      if (date && (!chosen || !chosen.date)) chosen = { rows, date, header:null, sheetName };
       if (!chosen) chosen = { rows, date, header:null, sheetName };
     }
 
@@ -1753,7 +1762,7 @@ async function parseSalesFile(file){
     result.records = extractRecords(chosen.rows, start, header, result.date);
 
     if (!result.dateDetected) result.warnings.push('Дата в файле не найдена. Укажите дату вручную.');
-    if (!result.records.length) result.warnings.push('Не найдено ни одной пары «товар → код» с числовым количеством.');
+    if (!result.records.length) result.warnings.push('В файле нет продаж. Если это корректный нулевой дневной отчёт, подтвердите импорт — день будет отмечен загруженным.');
 
     const skuByArticle = buildArticleMap(state.settings.skus);
     const unknownArticles = new Set();
@@ -1780,7 +1789,7 @@ async function parseSalesFile(file){
     if (!state.settings.skus.length) result.warnings.push('В настройках нет товарных позиций — акционные продажи не будут распознаны.');
     if (!result.mappedCount && result.records.length) result.warnings.push('Ни один артикул из файла не сопоставлен с акционными SKU. Все продажи сохранятся, но в мотивацию пока не попадут.');
     if (result.unknownArticles.length) result.warnings.push('Найдены артикулы вне акции: ' + result.unknownArticles.length + ' уникальных.');
-    if (result.hasUnknownSeller) result.warnings.push('Часть строк не имеет продавца. Они попадут в «Продавец не определён».');
+    if (result.hasUnknownSeller) result.warnings.push('Часть строк не имеет продавца. Они сохранятся в истории продаж, но не войдут в план и начисления 3SKU.');
     if (result.date && (result.date < state.settings.startDate || result.date > state.settings.endDate)) {
       result.warnings.push('Дата ' + formatFullDate(result.date) + ' вне периода акции. Данные сохранятся, но в расчёт месяца не попадут.');
     }
@@ -1792,6 +1801,8 @@ async function parseSalesFile(file){
 }
 
 async function handleImportFiles(files){
+  await stateReadyPromise;
+  if (!storeReady) { showToast('Хранилище не загружено. Сначала восстановите JSON.', 'error'); return; }
   if (!files || !files.length) return;
   const body = document.getElementById('importBody');
   if (body) body.innerHTML = '<div class="empty-state"><strong>Обрабатываю файлы…</strong><div class="muted">Ищу дату, заголовок 1С, продавцов, товары и коды</div></div>';
@@ -1877,7 +1888,7 @@ function renderAlerts(m){
   }
   if (m.checksMissingDates.length) {
     const list = m.checksMissingDates.slice(0,10).map(d => formatShortDate(d)).join(', ') + (m.checksMissingDates.length > 10 ? '…' : '');
-    html.push(alertHtml('warning','Не введены чеки за ' + m.checksMissingDates.length + ' дн.', 'Даты: <strong>' + esc(list) + '</strong>. Без чеков пенетрация и нагрузка на кассира не рассчитываются.', '<button class="btn btn-sm" data-action="open-checks">Ввести чеки</button>'));
+    html.push(alertHtml('warning','Не введены чеки за ' + m.checksMissingDates.length + ' дн.', 'Даты: <strong>' + esc(list) + '</strong>. Без чеков 3SKU на 100 чеков и нагрузка на кассира не рассчитываются.', '<button class="btn btn-sm" data-action="open-checks">Ввести чеки</button>'));
   }
   const unknownSeller = m.sellers.find(s => s.key === UNKNOWN_KEY && s.units > 0);
   if (unknownSeller) {
@@ -1918,14 +1929,14 @@ function renderOverview(m){
     kpiCard('🎯','Нужно продавать в день', fmtNum(t.perDayToPlan,1) + ' шт', `До 100% осталось ${fmtNum(t.requiredToPlan)} шт • осталось ${m.remainingDays} дн.`, null, t.requiredToPlan > 0 ? 'warning' : 'success'),
     kpiCard('🏁','Пороги по SKU', `${t.thresholdsReached}/${m.skuMetrics.length}`, `Прогнозно: ${t.projectedThresholdsReached}/${m.skuMetrics.length} • фонд включается по каждой позиции отдельно`, m.skuMetrics.length ? t.thresholdsReached / m.skuMetrics.length * 100 : 0, t.thresholdsReached === m.skuMetrics.length && m.skuMetrics.length ? 'success' : 'warning'),
     kpiCard('💰','К выплате сейчас', fmtMoney(t.payableTotal), `Начислено ${fmtMoney(t.accruedTotal)} • фонд кассирам ${fmtMoney(t.currentFund)} • прогноз ${fmtMoney(t.projectedPayableTotal)}`, null, 'success'),
-    kpiCard('🧾','Чеки и пенетрация', m.storeChecks > 0 ? fmtNum(m.storeChecks) : '—', m.storeChecks > 0
-      ? `Пенетрация-оценка ${fmtPct(t.storePenetration)} • план чеков ${fmtNum(state.settings.planChecks)}`
-      : 'Введите чеки вручную для расчёта пенетрации', checkProgress, 'info')
+    kpiCard('🧾','Чеки и 3SKU на 100 чеков', m.storeChecks > 0 ? fmtNum(m.storeChecks) : '—', m.storeChecks > 0
+      ? `3SKU на 100 чеков ${fmtPct(t.storePenetration)} • план чеков ${fmtNum(state.settings.planChecks)}`
+      : 'Введите чеки вручную для расчёта 3SKU на 100 чеков', checkProgress, 'info')
   ].join('');
 
   document.getElementById('cumulativeChip').textContent = t.units > 0 ? fmtPct(t.achievement) + ' от плана' : 'нет данных';
   document.getElementById('dailyChip').textContent = m.daysWithData + ' из ' + m.totalDays + ' дн.';
-  document.getElementById('minPayoutChip').textContent = 'Минимальная выплата: ' + fmtMoney(m.minPayout);
+  document.getElementById('minPayoutChip').textContent = 'Минимум по каждой SKU: ' + fmtMoney(m.minPayout) + ' · ниже минимума не выплачивается и не переносится';
 
   document.getElementById('skuCards').innerHTML = m.skuMetrics.length ? m.skuMetrics.map(sku => {
     const status = sku.thresholdReached ? 'success' : (sku.projectedThresholdReached ? 'warning' : 'danger');
@@ -1966,7 +1977,7 @@ function renderOverview(m){
           Фонд: <strong>${fmtNum(sku.fundRate,2)} ₽/шт</strong> •
           Прогноз выплат: <strong>${fmtMoney(payoutProj)}</strong>
           ${sku.range ? `<br>Период продаж: <strong>${esc(sku.saleRangeText)}</strong> • расчёты и план — только по этим дням (${sku.skuDates.length} дн.)` : ''}
-          ${sku.targetPenetration != null ? `<br>Целевая пенетрация-оценка: <strong>${fmtPct(sku.targetPenetration,2)}</strong>` : ''}
+          ${sku.targetPenetration != null ? `<br>Целевая 3SKU на 100 чеков-оценка: <strong>${fmtPct(sku.targetPenetration,2)}</strong>` : ''}
         </div>
       </div>
     `;
@@ -2044,7 +2055,7 @@ function sellerBadges(m, s){
   else if (s.shortfall > 0 && s.shortfall <= 50) badges.push(badge('Осталось ' + fmtMoney(s.shortfall),'warning'));
   if (s.activeDays >= Math.max(2, Math.ceil(m.daysWithData * 0.8)) && s.units > 0) badges.push(badge('Стабильность','primary'));
   if (s.maxDay > 0 && m.maxDailySellerUnits > 0 && s.maxDay >= m.maxDailySellerUnits) badges.push(badge('Прорыв дня','accent'));
-  if (s.penetration != null && m.totals.targetPenetration && s.penetration >= m.totals.targetPenetration) badges.push(badge('Пенетрация','success'));
+  if (s.penetration != null && m.totals.targetPenetration && s.penetration >= m.totals.targetPenetration) badges.push(badge('3SKU на 100 чеков','success'));
   if (s.units > 0 && s.activeDays === 1 && m.daysWithData > 2) badges.push(badge('Разовый всплеск','neutral'));
   return badges.slice(0,4).join('');
 }
@@ -2052,15 +2063,14 @@ function sellerBadges(m, s){
 function renderTeam(m){
   const activeSellers = m.sellers.filter(s => s.units > 0);
   const paidSellers = m.sellers.filter(s => s.payable > 0);
-  const withChecks = m.sellers.filter(s => s.penetration != null);
-  const avgPenetration = withChecks.length ? withChecks.reduce((a,s) => a + s.penetration, 0) / withChecks.length : null;
+  const avgPenetration = m.totals.storePenetration;
   const leader = m.sellers.find(s => s.key !== UNKNOWN_KEY && s.units > 0);
   const unitsPerCheck = m.storeChecks > 0 ? m.totals.units / m.storeChecks : null;
 
   document.getElementById('teamKpis').innerHTML = [
     kpiCard('👥','Активные кассиры', String(activeSellers.length), `В справочнике ${getActiveSellers().length} • с продажами ${activeSellers.length}`, activeSellers.length / Math.max(1,getActiveSellers().length) * 100, 'primary'),
     kpiCard('🏆','Лидер', leader ? shortName(leader.name) : '—', leader ? fmtNum(leader.units) + ' шт • ' + fmtMoney(leader.accrued) : 'Нет продаж', leader ? leader.share : 0, 'success'),
-    kpiCard('🧾','Средняя пенетрация', avgPenetration == null ? '—' : fmtPct(avgPenetration), `Целевая оценка ${m.totals.targetPenetration == null ? '—' : fmtPct(m.totals.targetPenetration)} • чеки ${fmtNum(m.storeChecks)}`, avgPenetration && m.totals.targetPenetration ? avgPenetration / m.totals.targetPenetration * 100 : null, 'info'),
+    kpiCard('🧾','3SKU на 100 чеков магазина', avgPenetration == null ? '—' : fmtPct(avgPenetration), `Целевая оценка ${m.totals.targetPenetration == null ? '—' : fmtPct(m.totals.targetPenetration)} • чеки ${fmtNum(m.storeChecks)}`, avgPenetration && m.totals.targetPenetration ? avgPenetration / m.totals.targetPenetration * 100 : null, 'info'),
     kpiCard('⚡','Штук на чек', unitsPerCheck == null ? '—' : fmtNum(unitsPerCheck,2), `Продажи ${fmtNum(m.totals.units)} шт / чеки ${fmtNum(m.storeChecks)}`, null, 'primary'),
     kpiCard('💸','Порог 100 ₽ взяли', String(paidSellers.length), `Не получили выплату: ${m.sellers.filter(s => s.accrued > 0 && s.payable === 0).length}`, m.sellers.length ? paidSellers.length / m.sellers.length * 100 : 0, 'success'),
     kpiCard('🔥','Максимум за день', fmtNum(m.maxDailySellerUnits) + ' шт', 'Лучший личный дневной результат', null, 'warning')
@@ -2072,7 +2082,7 @@ function renderTeam(m){
       <thead>
         <tr>
           <th>#</th><th>Сотрудник</th><th class="num">Дни</th><th class="num">Шт</th><th class="num">Вклад</th>
-          <th class="num">Шт/день</th><th class="num">Чеки</th><th class="num">Пенетрация</th>
+          <th class="num">Шт/день</th><th class="num">Чеки</th><th class="num">3SKU на 100 чеков</th>
           <th class="num">Начислено</th><th class="num">К выплате</th><th class="num">Прогноз</th><th>Бейджи</th>
         </tr>
       </thead>
@@ -2162,7 +2172,7 @@ function renderSelectedSeller(m){
       <div class="stat-box"><span>Начислено</span><strong>${fmtMoney(seller.accrued)}</strong></div>
       <div class="stat-box"><span>К выплате</span><strong>${fmtMoney(seller.payable)}</strong></div>
       <div class="stat-box"><span>Чеки</span><strong>${seller.checks ? fmtNum(seller.checks) : '—'}</strong></div>
-      <div class="stat-box"><span>Пенетрация</span><strong>${seller.penetration == null ? '—' : fmtPct(seller.penetration)}</strong></div>
+      <div class="stat-box"><span>3SKU на 100 чеков</span><strong>${seller.penetration == null ? '—' : fmtPct(seller.penetration)}</strong></div>
       <div class="stat-box"><span>Активных дней</span><strong>${fmtNum(seller.activeDays)}</strong></div>
       <div class="stat-box"><span>Прогноз</span><strong>${fmtMoney(seller.projPayable)}</strong></div>
     </div>
@@ -2178,7 +2188,7 @@ function renderSelectedSeller(m){
           <span class="muted small">${fmtNum(d.units)} шт • ${fmtMoney(d.accrued || 0)} • прогноз ${fmtMoney(d.projAccrued || 0)}</span>
         </div>
         <div class="progress"><span class="progress-fill" style="width:${clampWidth(share)}%;background:${sku.color}"></span></div>
-        <div class="note" style="margin-top:6px">Личный вклад в продажи сотрудника: ${fmtPct(share)}. Доля в SKU: ${fmtPct(sku.units > 0 ? d.units / sku.units * 100 : 0)}.</div>
+        <div class="note" style="margin-top:6px">К выплате по SKU: ${fmtMoney(d.payable || 0)}. На 100 чеков: ${seller.checks > 0 ? fmtNum(d.units / seller.checks * 100, 2) : '—'}. Личный вклад в продажи сотрудника: ${fmtPct(share)}. Доля в SKU: ${fmtPct(sku.units > 0 ? d.units / sku.units * 100 : 0)}.</div>
       </div>
     `;
   }).join('');
@@ -2744,7 +2754,7 @@ function renderSettings(){
         <div class="field"><label>Дата окончания</label><input class="input" type="date" data-general="endDate" value="${esc(d.endDate)}"></div>
         <div class="field"><label>План чеков за месяц</label><input class="input" type="number" min="0" data-general="planChecks" value="${esc(d.planChecks)}"></div>
         <div class="field"><label>Ожидание чеков в день</label><input class="input" value="${expectedChecksPerDay}" disabled></div>
-        <div class="field"><label>Минимальная выплата сотруднику, ₽</label><input class="input" type="number" min="0" data-general="minPayout" value="${esc(d.minPayout)}"></div>
+        <div class="field"><label>Минимальная выплата по каждой SKU сотрудника, ₽</label><input class="input" type="number" min="0" data-general="minPayout" value="${esc(d.minPayout)}"></div>
         <div class="field"><label>Режим премиального фонда</label>
           <select data-general="fundMode">
             <option value="cashiersByUnits" ${d.fundMode==='cashiersByUnits'?'selected':''}>Фонд — кассирам пропорционально штукам</option>
@@ -2841,7 +2851,7 @@ function migrationBlockHtml(){
   return html;
 }
 
-function saveSettings(){
+async function saveSettings(){
   if (!settingsDraft) return;
   if (!settingsDraft.startDate || !settingsDraft.endDate || settingsDraft.startDate > settingsDraft.endDate) {
     showToast('Проверьте период акции', 'error');
@@ -2874,11 +2884,20 @@ function saveSettings(){
     return;
   }
 
+  const usedArticles = new Set();
+  for (const sku of settingsDraft.skus.filter(x => x.enabled)) {
+    for (const article of sku.articles) {
+      const key = normArticle(article);
+      if (usedArticles.has(key)) { showToast('Артикул назначен нескольким SKU: ' + article, 'error'); return; }
+      usedArticles.add(key);
+    }
+  }
   state.settings = JSON.parse(JSON.stringify(settingsDraft));
   settingsDraft = null;
   closeModal('settingsModal');
-  persist('immediate');
+  const saved = await persist('immediate');
   renderAll();
+  if (!saved) return;
   showToast('Настройки сохранены', 'success');
 }
 
@@ -2895,7 +2914,7 @@ function renderImportPreview(){
   const duplicateDates = [...new Set(pendingImports.map(p => p.date).filter(Boolean))]
     .filter(d => (state.imports || []).some(i => i.date === d));
   const anyNewSellers = pendingImports.some(p => p.newSellers && p.newSellers.length);
-  const canImport = pendingImports.some(p => !p.error && p.date && p.records.length);
+  const canImport = pendingImports.some(p => !p.error && SoldieRules.date(p.date) && (p.records.length || p.header?.detected));
 
   let html = `
     <div class="dropzone" id="dropZone">
@@ -2975,14 +2994,15 @@ function bindDropzone(){
   dz.addEventListener('drop', e => { if (e.dataTransfer && e.dataTransfer.files) handleImportFiles(e.dataTransfer.files); });
 }
 
-function confirmImport(){
+async function confirmImport(){
   const addNewEl = document.getElementById('addNewSellers');
   const addNew = !addNewEl || addNewEl.checked;
   const groups = new Map();
 
   pendingImports.forEach(p => {
-    if (p.error || !p.date || !p.records.length) return;
-    if (!groups.has(p.date)) groups.set(p.date, { date:p.date, records:[], files:[], newSellers:new Set() });
+    if (p.error || !SoldieRules.date(p.date) || (!p.records.length && !p.header?.detected)) return;
+    // One report is a complete snapshot of a day; the last selected file replaces earlier copies.
+    groups.set(p.date, { date:p.date, records:[], files:[], newSellers:new Set() });
     const g = groups.get(p.date);
     g.records.push(...p.records);
     g.files.push(p.fileName);
@@ -3011,8 +3031,10 @@ function confirmImport(){
   const importedDates = [...groups.keys()].sort();
   pendingImports = [];
   closeModal('importModal');
-  persist('immediate');
+  const saved = await persist('immediate');
   renderAll();
+  if (!saved) { showToast('Данные в памяти, но не сохранены. Повторите сохранение или выгрузите JSON.', 'error'); return false; }
+  window.dispatchEvent(new Event('sku3-data-changed'));
   showToast('Загружено дней: ' + importedDates.length, 'success');
 
   const lastDate = importedDates[importedDates.length - 1];
@@ -3038,7 +3060,7 @@ function renderChecksModal(){
   body.innerHTML = `
     <div class="settings-grid">
       <div class="field"><label>Дата</label><input class="input" type="date" id="checksDateInput" value="${esc(date)}" min="${esc(state.settings.startDate)}" max="${esc(state.settings.endDate)}"></div>
-      <div class="field"><label>Подсказка</label><input class="input" value="Чеки нужны для пенетрации" disabled></div>
+      <div class="field"><label>Подсказка</label><input class="input" value="Чеки нужны для 3SKU на 100 чеков" disabled></div>
     </div>
     ${importedWithoutChecks.length ? alertHtml('info','Нет чеков за загруженные дни', importedWithoutChecks.map(d => `<button class="btn btn-sm" data-action="open-check-date" data-date="${d}">${formatShortDate(d)}</button>`).join(' ')) : ''}
     <div class="table-wrap">
@@ -3058,7 +3080,7 @@ function renderChecksModal(){
         </tbody>
       </table>
     </div>
-    <div class="note">Если заполнены чеки по каждому кассиру, общий итог по магазину можно не вводить — он посчитается автоматически. Если введён общий итог, он используется для общей пенетрации магазина.</div>
+    <div class="note">Если заполнены чеки по каждому кассиру, общий итог по магазину можно не вводить — он посчитается автоматически. Если введён общий итог, он используется для общей 3SKU на 100 чеков магазина.</div>
   `;
 }
 
@@ -3078,7 +3100,7 @@ function copyPreviousChecks(){
   showToast('Скопированы чеки за ' + formatFullDate(prev) + '. Нажмите «Сохранить».', 'info');
 }
 
-function saveChecks(){
+async function saveChecks(){
   const dateInput = document.getElementById('checksDateInput');
   if (!dateInput || !dateInput.value) { showToast('Укажите дату', 'error'); return; }
   const date = dateInput.value;
@@ -3090,8 +3112,9 @@ function saveChecks(){
     if (val > 0) state.checks.push({ date, seller:key, checks:val });
   });
   closeModal('checksModal');
-  persist('immediate');
+  const saved = await persist('immediate');
   renderAll();
+  if (!saved) return;
   showToast('Чеки за ' + formatFullDate(date) + ' сохранены', 'success');
 }
 
@@ -3109,12 +3132,21 @@ function downloadJSON(){
   showToast('JSON-состояние выгружено', 'success');
 }
 
+function validateStateFile(data) {
+  if (!data || typeof data !== 'object' || !data.settings || !Array.isArray(data.sales) || !Array.isArray(data.checks) || !Array.isArray(data.imports)) throw new Error('Неверная структура состояния');
+  for (const row of data.sales) {
+    if (!SoldieRules.date(row.date) || !row.article || !Number.isFinite(Number(row.qty)) || !Number.isFinite(Number(row.sum))) throw new Error('Неверная запись продаж');
+  }
+  if (!Array.isArray(data.settings.skus) || !Array.isArray(data.settings.employees)) throw new Error('Неверные настройки');
+}
 function loadJSONFile(file){
   const reader = new FileReader();
   reader.onload = () => {
     try {
       const data = JSON.parse(reader.result);
+      validateStateFile(data);
       state = migrateState(data);
+      storeReady = true;
       /* Полный перенос продаж в чанки: старые дни удаляются из хранилища,
          новые записываются одной пакетной операцией */
       removedDates = new Set(Array.from(s3store.chunks.keys()));
@@ -3124,9 +3156,8 @@ function loadJSONFile(file){
       selectedSeller = null;
       settingsDraft = null;
       closeModal('settingsModal');
-      persist('immediate').then(function(){ syncStateFromStore(); renderAll(); });
+      persist('immediate').then(function(saved){ if (saved) { renderAll(); window.dispatchEvent(new Event('sku3-data-changed')); showToast('JSON-состояние загружено', 'success'); } });
       renderAll();
-      showToast('JSON-состояние загружено', 'success');
       if (migrationNote) showToast(migrationNote, 'warning');
     } catch(e) {
       showToast('Не удалось прочитать JSON', 'error');
@@ -3137,6 +3168,7 @@ function loadJSONFile(file){
 
 function clearSales(){
   if (!confirm('Удалить все импортированные продажи и отметки о загрузке дней?')) return;
+  storeReady = true;
   removedDates = new Set(Array.from(s3store.chunks.keys()).concat(Array.from(removedDates)));
   state.sales = [];
   state.imports = [];
@@ -3212,7 +3244,9 @@ function restoreFromLegacyBackup(){
 function applyRestoredState(raw){
   try {
     var data = JSON.parse(raw);
+    validateStateFile(data);
     state = migrateState(data);
+    storeReady = true;
     removedDates = new Set(Array.from(s3store.chunks.keys()));
     s3store.clearAllSales();
     s3store.replaceAllSales(state.sales || []);
@@ -3220,7 +3254,7 @@ function applyRestoredState(raw){
     try { localStorage.setItem(STORAGE_KEY, raw); } catch(e) {}
     legacyPendingRaw = raw;
     closeModal('settingsModal');
-    persist('immediate').then(function(){ syncStateFromStore(); renderAll(); renderSettings(); });
+    persist('immediate').then(function(saved){ if (saved) { renderAll(); renderSettings(); } });
     renderAll();
     showToast('Данные восстановлены из резервной копии', 'success');
   } catch(e) {
@@ -3246,6 +3280,7 @@ function addExampleSkus(){
 
 function bindEvents(){
   document.addEventListener('click', function(e){
+    if (!e.target.closest('#sku3Card')) return;
     const el = e.target.closest('[data-action]');
     if (!el) return;
     const action = el.dataset.action;
@@ -3376,9 +3411,10 @@ function showToast(msg, type){
       aggregateRecords: function(records){ return aggregateRecords(records); },
       parseSalesFile: function(file){ return parseSalesFile(file); },
       handleImportFiles: function(files){ return handleImportFiles(files); },
-      confirmImport: function(){ confirmImport(); },
+      ready: stateReadyPromise,
+      confirmImport: function(){ return confirmImport(); },
       renderAll: function(){ renderAll(); },
-      persist: function(){ persist(); },
+      persist: function(){ return persist('immediate'); },
       openModal: function(id){ openModal(id); },
       closeModal: function(id){ closeModal(id); },
       showToast: function(msg, type){ showToast(msg, type); },

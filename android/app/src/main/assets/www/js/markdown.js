@@ -5,45 +5,13 @@ window.__bootStamp && window.__bootStamp('js/markdown.js: выполнение')
 
 // ── Алгоритм прогноза цены ──
 function suggestPrice(currentPrice, stockDays, daysLeft) {
-  if (!currentPrice || currentPrice <= 0) return 1;
-  if (daysLeft <= 0) return 1;
-  if (stockDays >= 9999) {
-    const urgency = Math.max(0, Math.min(1, 1 - (daysLeft / 30)));
-    const discount = 0.20 + urgency * 0.50;
-    return roundTo9(currentPrice * (1 - discount));
-  }
-  if (!stockDays || stockDays <= 0) return currentPrice;
-  const ratio = stockDays / daysLeft;
-  if (ratio < 1) return currentPrice;
-  const discount = 1 - (1 / Math.pow(ratio, 0.6));
-  return roundTo9(currentPrice * (1 - discount));
+  const deadline = addDays(new Date(), daysLeft);
+  return SoldieRules.markdown(currentPrice, stockDays, deadline, 'sellto', new Date()).price;
 }
-
-function getPriceReason(currentPrice, stockDays, daysLeft) {
-  if (daysLeft <= 0) return { text: '💀 Дедлайн — 1 ₽', cls: 'reason-dead' };
-  if (stockDays >= 9999) {
-    const urgency = Math.max(0, Math.min(1, 1 - (daysLeft / 30)));
-    const pct = Math.round((0.20 + urgency * 0.50) * 100);
-    return { text: `🤷 Не продавался — провокация -${pct}%`, cls: 'reason-unsold' };
-  }
-  if (!stockDays || stockDays <= 0) return { text: '❓ Нет данных', cls: 'reason-ok' };
-  const ratio = stockDays / daysLeft;
-  if (ratio < 1) return { text: `✅ Успеваем (×${ratio.toFixed(2)})`, cls: 'reason-ok' };
-  const pct = Math.round((1 - (1 / Math.pow(ratio, 0.6))) * 100);
-  if (ratio < 2) return { text: `⚠️ Давление ×${ratio.toFixed(1)} → -${pct}%`, cls: 'reason-soft' };
-  return { text: `🔥 Горит ×${ratio.toFixed(1)} → -${pct}%`, cls: 'reason-hard' };
+function rowMarkdown(row) {
+  const deadline = currentMode === 'kлизма' ? SoldieRules.klizmaDeadline(new Date()) : parseDate(row['дата окончания продаж']);
+  return SoldieRules.markdown(num(row['цена маг, руб.']), num(row['остатки, дней']), deadline, currentMode, new Date());
 }
-
-// Проверка на "непродающийся" товар по единому правилу (28+ дней без продаж)
-function getUnsoldReason(row) {
-  if (isUnsoldDays(row)) {
-    const imp = parseDate(row['дата ввоза']);
-    const days = Math.floor((Date.now() - imp.getTime()) / 86400000);
-    return { text: `🧊 Не продается ${days} дн. (≥${NO_SALES_DAYS})`, cls: 'reason-unsold' };
-  }
-  return null;
-}
-
 function ratioBadge(stockDays, daysLeft) {
   if (daysLeft <= 0)     return `<span class="ratio-badge ratio-fire">💀 0 дн.</span>`;
   if (stockDays >= 9999) return `<span class="ratio-badge ratio-fire">∞</span>`;
@@ -58,12 +26,18 @@ function ratioBadge(stockDays, daysLeft) {
 const HEAD_MD = `<tr><th>Код</th><th>Товар</th><th>Группа 1</th><th>КУБЫ</th><th>Себ, руб.</th><th>Цена ТН</th><th>Цена маг.</th><th>Наценка %</th><th>Склад (шт)</th><th>Продано (шт)</th><th>Ост. дней</th><th>Переоценка</th><th>⏳ До дедлайна</th><th>📊 Давление</th><th>💡 Прогноз цены</th><th>🧠 Причина</th><th>ВП остатка</th><th>🔧 Ваша цена</th><th>Δ цены</th><th>📈 Новая наценка</th></tr>`;
 const HEAD_VIEW = `<tr><th>Код</th><th>Товар</th><th>Группа 1</th><th>Группа 2</th><th>Группа 3</th><th>КУБЫ</th><th>Себ, руб.</th><th>Цена ТН</th><th>Цена маг.</th><th>Наценка %</th><th>Склад (шт)</th><th>Продано (шт)</th><th>ТО, руб.</th><th>ВП, руб.</th><th>Ост. дней</th><th>🔍</th><th>🔧 Ваша цена</th><th>📈 Новая наценка</th></tr>`;
 
+let exportSourceRows=[],exportSourceMode='md';
+const exportVariants={browse:'full',md:'prices'};
 function renderTable(data, mode, daysLeft) {
+  exportSourceRows=data;exportSourceMode=mode;
+  document.getElementById('mdExportType').value=exportVariants[mode];
+  document.getElementById('mdChangedOnly').checked=exportVariants[mode]==='changed';
   theadEl.innerHTML = mode === 'browse' ? HEAD_VIEW : HEAD_MD;
   tableBody.innerHTML = '';
+  document.getElementById('mdExportOptions').classList.remove('hidden');
   const frag = document.createDocumentFragment();
 
-  data.forEach(row => {
+  (mode==='browse'?data.slice(0,BROWSE_LIMIT):data).forEach(row => {
     const cost      = num(row['себ, руб.']);
     const curPrice  = num(row['цена маг, руб.']);
     const stockDays = num(row['остатки, дней']);
@@ -106,12 +80,16 @@ function renderTable(data, mode, daysLeft) {
         <td class="${gp < 0 ? 'fire-text' : ''}">${fmt(gp)}</td>
         <td>${odCell}</td>
         <td><button class="icon-btn" type="button" data-open-product data-code="${codeEsc}" title="Карточка товара">🔍</button></td>
-        <td><input type="number" class="price-input" value="${curPrice}" min="1" step="1" inputmode="decimal" aria-label="Ваша цена для ${codeEsc || 'товара'}"></td>
+        <td><input type="number" class="price-input" value="${escapeHtml(SuadelaExport.prices.has(codeRaw)?SuadelaExport.prices.get(codeRaw):curPrice)}" min="1" step="0.1" inputmode="decimal" aria-label="Ваша цена для ${codeEsc || 'товара'}"></td>
         <td class="margin-cell">-</td>
       `;
     } else {
-      const suggested  = suggestPrice(curPrice, stockDays, daysLeft);
-      const reason     = getUnsoldReason(row) || getPriceReason(curPrice, stockDays, daysLeft);
+      const advice = rowMarkdown(row);
+      const rowDays = advice.daysLeft;
+      const suggested = advice.price;
+      const reason = { text: advice.reason, cls: advice.expired ? 'reason-dead' : suggested < curPrice ? 'reason-hard' : 'reason-ok' };
+      tr.dataset.markdownBlocked = advice.blocked ? '1' : '';
+      if (advice.expired || advice.blocked) tr.style.background = '#fee2e2';
       const priceClass = suggested < curPrice ? 'suggested-fire' : 'suggested';
       const vpStock    = (curPrice - cost) * stockQty;
       tr.innerHTML = `
@@ -123,19 +101,19 @@ function renderTable(data, mode, daysLeft) {
         <td>${escapeHtml(row['цена тн, руб'] ?? '-')}</td>
         <td style="font-weight:500">${curPrice}</td>
         <td>${escapeHtml(row['наценка %'] ?? '-')}</td>
-        <td>${row['склад кол'] || 0}</td>
-        <td>${row['продано (шт)'] || 0}</td>
+        <td>${fmt(stockQty)}</td>
+        <td>${fmt(num(row['продано (шт)']))}</td>
         <td>${escapeHtml(row['остатки, дней'] ?? '-')}</td>
         <td>${row['дата переоценки'] ? fmtDate(row['дата переоценки']) : '-'}</td>
-        <td><span class="info-badge">${daysLeft} дн.</span></td>
-        <td>${ratioBadge(stockDays, daysLeft)}</td>
+        <td><span class="info-badge">${rowDays} дн.${advice.expired ? ' · ПРОСРОЧЕН' : ''}</span></td>
+        <td>${ratioBadge(stockDays, rowDays)}</td>
         <td>
           <span class="${priceClass}">${suggested} ₽</span>
-          <button class="apply-btn" type="button" data-apply-price="${suggested}">Прим.</button>
+          ${advice.blocked ? '' : `<button class="apply-btn" type="button" data-apply-price="${suggested}">Прим.</button>`}
         </td>
-        <td><span class="reason-badge ${reason.cls}">${reason.text}</span></td>
+        <td><span class="reason-badge ${reason.cls}">${reason.text}${advice.deferred ? `<br>Применить ${fmtDate(advice.actionDate)} (вт/пт)` : ''}</span></td>
         <td class="${vpStock < 0 ? 'fire-text' : ''}" style="font-weight:600">${fmt(vpStock)} ₽</td>
-        <td><input type="number" class="price-input" value="${curPrice}" min="1" step="1" inputmode="decimal" aria-label="Ваша цена для ${codeEsc || 'товара'}"></td>
+        <td><input type="number" class="price-input" value="${escapeHtml(SuadelaExport.prices.has(codeRaw)?SuadelaExport.prices.get(codeRaw):curPrice)}" min="1" step="0.1" inputmode="decimal" aria-label="Ваша цена для ${codeEsc || 'товара'}"></td>
         <td class="delta-cell text-muted">0.0%</td>
         <td class="margin-cell">-</td>
       `;
@@ -197,7 +175,7 @@ tableBody.addEventListener('click', e => {
 });
 
 tableBody.addEventListener('input', e => {
-  if (e.target.matches('.price-input')) calcMargin(e.target);
+  if (e.target.matches('.price-input')) {const tr=e.target.closest('tr');SuadelaExport.edit(tr.dataset.code,e.target.value,tr.dataset.origprice);calcMargin(e.target);}
 });
 
 function applyPrice(btn, price) {
@@ -233,20 +211,24 @@ function calcMargin(input) {
 }
 
 // ── Экспорт уценки ──
-document.getElementById('exportBtn')?.addEventListener('click', () => {
-  const rows = [['Код', 'Цена']];
-  document.querySelectorAll('#tableBody tr').forEach(tr => {
-    const code  = tr.dataset.code || '';
-    const price = parseFloat(tr.querySelector('.price-input')?.value) || 0;
-    rows.push([code, price]);
-  });
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = [{ wch: 20 }, { wch: 12 }];
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Уценка');
-  const today = new Date().toLocaleDateString('ru-RU').replace(/\./g, '-');
-  XLSX.writeFile(wb, `galamart_ucenka_${today}.xlsx`);
-});
+function markdownExportRows() {
+  const type=document.getElementById('mdChangedOnly').checked?'changed':document.getElementById('mdExportType').value;
+  for(const tr of tableBody.querySelectorAll('tr')) {
+    const input=tr.querySelector('.price-input');
+    // Include values set programmatically as well as trusted user input.
+    if(input)SuadelaExport.edit(tr.dataset.code,input.value,tr.dataset.origprice);
+    if(type!=='codes'&&tr.dataset.markdownBlocked&&SuadelaExport.prices.has(tr.dataset.code))throw Error('Пропущено расписание «Клизмы»: '+tr.dataset.code);
+  }
+  if(!exportSourceRows.length)throw Error('Нет товаров для экспорта');
+  return SuadelaExport.rawRows(exportSourceRows,CANON_HEADERS,DirectorRules.product,type);
+}
+document.getElementById('mdExportType').addEventListener('change',event=>{exportVariants[exportSourceMode]=event.target.value;document.getElementById('mdChangedOnly').checked=event.target.value==='changed';});
+
+function exportMarkdown() {
+  try { exportToExcel('galamart_ucenka_' + excelDateSuffix() + '.xlsx', 'Уценка', markdownExportRows()); }
+  catch (e) { showStatus('❌ ' + e.message, 'error'); }
+}
+document.getElementById('exportBtn')?.addEventListener('click', exportMarkdown);
 
 // ── Универсальный экспорт таблиц в Excel ──
 document.addEventListener('click', e => {
@@ -257,19 +239,9 @@ document.addEventListener('click', e => {
   if (!container) return;
   
   // Специальная обработка для таблицы уценки (Клизма/Продать до)
+  if (containerId === 'giftsContent') {exportGifts(false);return;}
   if (containerId === 'mdTableContainer') {
-    const rows = [['Код', 'Цена']];
-    container.querySelectorAll('tbody tr').forEach(tr => {
-      const code  = tr.dataset.code || '';
-      const price = parseFloat(tr.querySelector('.price-input')?.value) || 0;
-      rows.push([code, price]);
-    });
-    const ws = XLSX.utils.aoa_to_sheet(rows);
-    ws['!cols'] = [{ wch: 20 }, { wch: 12 }];
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Уценка');
-    const today = new Date().toLocaleDateString('ru-RU').replace(/\./g, '-');
-    XLSX.writeFile(wb, `galamart_ucenka_${today}.xlsx`);
+    exportMarkdown();
     return;
   }
   

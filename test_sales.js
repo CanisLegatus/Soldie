@@ -1,275 +1,142 @@
-/* Интеграционный тест раздела «💰 Продажи» в реальном окружении (jsdom + Chart.js + XLSX). */
-const fs = require('fs');
-const path = require('path');
-const { JSDOM, VirtualConsole } = require('jsdom');
-const XLSX = require('xlsx');
-
-const ROOT = '/workspace/galamart-analyst';
-let failures = 0;
-function ok(cond, name) {
-  console.log((cond ? '✅ ' : '❌ ') + name);
-  if (!cond) failures++;
-}
-
-// ── Тестовые данные suadela: 4 дня продаж, два продавца, артикулы разных групп ──
-const DAYS = ['2026-10-05', '2026-10-06', '2026-10-07', '2026-10-08'];
-const SELLERS = ['Иванова Мария Петровна', 'Петров Сергей Алексеевич'];
-const ARTICLES = [
-  { art: '931-606', name: 'Кабель КДЗБ 2.5 красный' },
-  { art: '931-544', name: 'Кабель КДЗБ 2.5 синий' },
-  { art: '450-113', name: 'Разветвитель тройник' },
-];
-// сумма/кол-во за день по 931-606: рост→спад после 07.10 (для проверки отсечки)
-const DAYDATA = {
-  '931-606': [{ q: 10, s: 10000 }, { q: 12, s: 12000 }, { q: 8, s: 8000 }, { q: 7, s: 7000 }],
-  '931-544': [{ q: 5, s: 5000 }, { q: 5, s: 5500 }, { q: 6, s: 6000 }, { q: 6, s: 6200 }],
-  '450-113': [{ q: 3, s: 3000 }, { q: 3, s: 3100 }, { q: 2, s: 2900 }, { q: 3, s: 3300 }],
-};
-
-// Формат 1С «Отчёт о продажах», который распознаёт парсер suadela:
-// шапка с датой («за период 05.10.2026»), колонки «Номенклатура.Код / Количество товаров / Сумма продаж со скидкой»,
-// строки продавцов (ФИО), затем пары «название товара → артикул».
-function buildWorkbook(dateStr) {
-  const idx = DAYS.indexOf(dateStr);
-  const dd = new Date(dateStr + 'T00:00:00');
-  const ruDate = String(dd.getDate()).padStart(2, '0') + '.' + String(dd.getMonth() + 1).padStart(2, '0') + '.' + dd.getFullYear();
-  const rows = [];
-  rows.push(['Отчёт о продажах']);
-  rows.push(['Магазин Галамартов, г. Москва']);
-  rows.push(['Отчёт за период ' + ruDate + ' по кассам']);
-  rows.push([]);
-  rows.push(['Номенклатура.Код', 'Количество товаров', 'Сумма продаж со скидкой']);
-  SELLERS.forEach(seller => {
-    rows.push([seller, '', '']);
-    ARTICLES.forEach(a => {
-      const d = DAYDATA[a.art][idx];
-      const qHalf = Math.max(1, Math.round(d.q / 2));
-      const sHalf = Math.round(d.s / 2);
-      rows.push([a.name, '', '']);            // название товара (pending)
-      rows.push([a.art, qHalf, sHalf]);       // артикул + показатели
-    });
-  });
-  rows.push(['Итого', '25', '12345']);
-  const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-  XLSX.utils.book_append_sheet(wb, ws, 'Лист1');
-  return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-}
-
-async function main() {
-  const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
-  const vc = new VirtualConsole();
-  const jsErrors = [];
-  vc.on('jsdomError', e => jsErrors.push(String(e && e.message || e)));
-  vc.on('error', (...a) => jsErrors.push(a.map(String).join(' ')));
-
-  const dom = new JSDOM(html, {
-    url: 'file:///workspace/galamart-analyst/index.html',
-    runScripts: 'dangerously',
-    resources: 'usable',
-    pretendToBeVisual: true,
-    virtualConsole: vc,
-    beforeParse(window) {
-      // заглушки canvas
-      window.HTMLCanvasElement.prototype.getContext = function () {
-        const noop = () => {};
-        const ctx = new Proxy({}, {
-          get(t, k) {
-            if (k === 'canvas') return t.__canvas;
-            if (k === 'measureText') return () => ({ width: 10 });
-            if (k === 'getImageData') return () => ({ data: [] });
-            if (k === 'createLinearGradient') return () => ({ addColorStop: noop });
-            if (typeof k === 'string') return t[k] !== undefined ? t[k] : noop;
-            return noop;
-          },
-          set(t, k, v) { t[k] = v; return true; }
-        });
-        ctx.__canvas = this;
-        return ctx;
+/* Offline browser regression suite. CHROME_BIN may point to a local Chromium. */
+const assert = require('node:assert/strict');
+const path = require('node:path');
+const { pathToFileURL } = require('node:url');
+const puppeteer = require('puppeteer-core');
+async function run() {
+  const browser = await puppeteer.launch({ executablePath: process.env.CHROME_BIN || '/usr/bin/chromium', args:['--no-sandbox','--disable-setuid-sandbox'] });
+  try {
+    const page = await browser.newPage(), errors = [], requests = [];
+    page.on('pageerror', error => errors.push(error.message));
+    page.on('request', request => { if (/^https?:/.test(request.url())) requests.push(request.url()); });
+    await page.emulateTimezone('Europe/Moscow');
+    await page.evaluateOnNewDocument(() => {
+      const OriginalDate = Date;
+      window.Date = class extends OriginalDate {
+        constructor(...args) { super(...(args.length ? args : ['2026-10-26T09:00:00+03:00'])); }
+        static now() { return new OriginalDate('2026-10-26T09:00:00+03:00').getTime(); }
       };
-      window.URL.createObjectURL = () => 'blob:test';
-      window.URL.revokeObjectURL = () => {};
-      window.matchMedia = window.matchMedia || (q => ({ matches: false, media: q, addListener: () => {}, removeListener: () => {}, addEventListener: () => {}, removeEventListener: () => {} }));
-      // localStorage не нужен отдельный — jsdom предоставляет.
+    });
+    const url = pathToFileURL(path.resolve(__dirname,'galamart-analyst/index.html')).href;
+    await page.goto(url);await page.click('[data-mode="dash"]');
+    await page.evaluate(() => {
+      const values = { 'код':'A-001','товар':'Медленный товар','группа 1':'Группа','группа 2':'Подгруппа','группа 3':'Тип','себ, руб.':10,'цена тн, руб':29.9,'цена маг, руб.':29.9,'наценка %':199,'склад кол':80,'склад сумма, руб.':800,'продано (шт)':20,'то сс, руб':200,'то, руб':598,'остатки, дней':112,'дата ввоза':'01.08.2026','дата окончания продаж':'30.10.2026','кубы':'ЗО вр' };
+      const rows = [['Справка - Остатки по датам ввоза. Дата остатков: 25.10.2026, период продаж: с 28.09.2026 по 25.10.2026'],[],CANON_HEADERS, CANON_HEADERS.map(key=>values[key]??'')];
+      const dead={...values,'код':'A-002','товар':'Мёртвый товар','продано (шт)':0,'то, руб':0,'то сс, руб':0,'остатки, дней':9999,'дата окончания продаж':'25.10.2026','кубы':'!ВНЕ_АМ-1'};
+      rows.push(CANON_HEADERS.map(key=>dead[key]??''));
+      const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Отчёт');
+      const file=new File([XLSX.write(wb,{type:'array',bookType:'xlsx'})],'stock.xlsx');
+      const dt=new DataTransfer();dt.items.add(file);fileInput.files=dt.files;fileInput.dispatchEvent(new Event('change'));
+    });
+    await page.waitForFunction(()=>rawData.length===2);
+    assert.equal(await page.evaluate(()=>aggRows(rawData).slowCount),2);
+    assert.equal(await page.evaluate(()=>aggRows(rawData).deadCount),1);
+    assert.equal(await page.evaluate(()=>fmtDate(reportDate)),'25.10.2026');
+    assert.match(await page.$eval('#dashContent',el=>el.textContent),/Медленный сток/);
+    await page.click('[data-dash-open="slow"]');
+    assert.match(await page.$eval('#modalBox',el=>el.textContent),/Медленный товар/);
+    await page.evaluate(()=>closeModal());
+    await page.click('[data-mode="analysis"]'); await page.click('[data-an-page="slow"]');
+    assert.match(await page.$eval('#anContent',el=>el.textContent),/26,7%/);
+    await page.evaluate(()=>{ anTab='items'; renderAnalysis(); });
+    assert.match(await page.$eval('#anContent',el=>el.textContent),/20[.,]0%/);
+    await page.evaluate(()=>{
+      openProduct('A-001');closeModal();openGroup('Группа');closeModal();openCube('ЗО вр');closeModal();
+      for (const item of AN_PAGES) {anPage=item.key;anTab='groups';renderAnalysis();anTab='items';renderAnalysis();}
+      for (const key of ['to','gp','markup','sales','stock','dead','slow','turnover']) {openDashDrill(key);closeModal();}
+    });
+    await page.click('[data-mode="verify"]');
+    await page.type('#verifyCodeInput','A-001');await page.click('#verifyCodeBtn');
+    assert.match(await page.$eval('#verifyContent',el=>el.textContent),/Медленный товар/);
+    await page.click('[data-mode="gifts"]');
+    await page.select('#giftStockFilter','dead');
+    assert.equal(await page.$$eval('.gift-check',els=>els.length),1);
+    await page.evaluate(()=>{document.querySelector('#giftCubeFilter input[value="ЗО"]').checked=true;document.getElementById('giftCubeFilter').dispatchEvent(new Event('change'));});
+    assert.equal(await page.$$eval('.gift-check',els=>els.length),0);
+    assert.deepEqual(await page.evaluate(()=>{
+      const r=rawData[0], log=getLogistics(cfg);return {gp:zoneStats(['A-001','A-001']).agg.gp,blocked:zoneItemStatus(r,10,log).st};
+    }),{gp:398,blocked:'discontinued'});
+    await page.click('[data-mode="sellto"]');
+
+    await page.evaluate(()=>{filterDateInput.value='2026-10-30';filterDateInput.dispatchEvent(new Event('change'));});
+    await page.click('#processBtn'); await page.waitForSelector('#tableBody tr');
+    assert.equal(await page.evaluate(()=>rowMarkdown(rawData[1]).expired),true);
+    assert.equal(await page.evaluate(()=>rowMarkdown(rawData[1]).price),1);
+    await page.evaluate(()=>{const input=tableBody.querySelector('.price-input');input.value='2.9';input.dispatchEvent(new Event('input'));document.getElementById('mdChangedOnly').checked=true;});
+    assert.equal(await page.evaluate(()=>markdownExportRows().length),2);
+    assert.equal(await page.evaluate(()=>{tableBody.querySelector('.price-input').value='';try{markdownExportRows();return false}catch{return true}}),true);
+    await page.click('[data-mode="sales"]');
+    assert.equal(await page.evaluate(()=>sku3Api.ready),true);
+    const metrics=await page.evaluate(async()=>{
+      const st=sku3Api.getState(); st.settings.startDate='2026-10-01';st.settings.endDate='2026-10-31';st.settings.minPayout=500;st.settings.fundMode='cashiersByUnits';
+      st.settings.employees=[{id:'e',name:'Иванова Мария Петровна'}];
+      st.settings.skus=[{id:'a',name:'A',articles:['931-606'],planUnits:100,cashierRate:5,fundRate:2,threshold:80,enabled:true},{id:'b',name:'B',articles:['931-544'],planUnits:100,cashierRate:5,fundRate:2,threshold:80,enabled:true}];
+      st.sales=[{date:'2026-10-05',seller:'Иванова Мария Петровна',article:'931-606',name:'Товар A',qty:70,sum:700},{date:'2026-10-05',seller:'Иванова Мария Петровна',article:'931-544',name:'Товар B',qty:100,sum:1000},{date:'2026-10-05',seller:'',article:'931-606',qty:1000,sum:10000},{date:'2026-10-05',seller:'Иванова Мария Петровна',article:'931-606',qty:-2,sum:-20}];
+      st.imports=[{date:'2026-10-05'},{date:'2026-10-06'}];
+      st.checks=[{date:'2026-10-05',seller:'__STORE__',checks:100},{date:'2026-10-06',seller:'Иванова Мария Петровна',checks:50}];
+      const m=sku3Api.computeMetrics();
+      window.salesRefresh?.();
+      return {units:m.totals.units,payable:m.totals.payableTotal,base:m.totals.currentBase,fund:m.totals.currentFund,checks:m.storeChecks,pace:m.totals.paceUnitsPerDay,needed:m.totals.perDayToPlan};
+    });
+    assert.equal(metrics.checks,150);assert.equal(metrics.units,170); assert.equal(metrics.payable,700);assert.equal(metrics.base,850);assert.equal(metrics.fund,200);
+    assert.ok(Math.abs(metrics.pace-170/25)<1e-8); assert.equal(metrics.needed,5);
+    const thresholdCases=await page.evaluate(()=>{
+      const st=sku3Api.getState(), skus=st.settings.skus, sales=st.sales, min=st.settings.minPayout;
+      st.settings.minPayout=0;st.settings.skus=[skus[0]];
+      const results=[70,80,100].map(qty=>{st.sales=[{...sales[0],qty}];return sku3Api.computeMetrics().totals.payableTotal;});
+      st.settings.skus=skus;st.sales=sales;st.settings.minPayout=min;return results;
+    });
+    assert.deepEqual(thresholdCases,[350,560,700]);
+    // Parser/import roundtrip: last file replaces the entire day, returns survive separately.
+    await page.evaluate(async()=>{
+      const files=[2,3].map(qty=>{
+        const rows=[['Отчёт за период 07.10.2026'],['Номенклатура.Код','Количество товаров','Сумма продаж со скидкой'],['Иванова Мария Петровна','',''],['Товар A',qty,qty*10],['931-606',qty,qty*10],['Возврат',-1,-10],['931-544',-1,-10]];
+        const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Продажи');
+        return new File([XLSX.write(wb,{type:'array',bookType:'xlsx'})],'sales'+qty+'.xlsx');
+      });
+      await sku3Api.handleImportFiles(files);await sku3Api.confirmImport();
+    });
+    assert.equal(await page.evaluate(()=>sku3Api.getState().sales.find(r=>r.date==='2026-10-07'&&r.article==='931-606').qty),3);
+    assert.equal(await page.evaluate(()=>sku3Api.getState().sales.find(r=>r.date==='2026-10-07'&&r.article==='931-544').qty),-1);
+    await page.evaluate(async()=>{
+      const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([['Отчёт за период 08.10.2026'],['Номенклатура.Код','Количество товаров','Сумма продаж со скидкой'],['Итого',0,0]]),'Продажи');
+      const file=new File([XLSX.write(wb,{type:'array',bookType:'xlsx'})],'zero.xlsx');
+      await sku3Api.handleImportFiles([file]);await sku3Api.confirmImport();
+    });
+    assert.equal(await page.evaluate(()=>sku3Api.getState().imports.some(row=>row.date==='2026-10-08')),true);
+    await page.reload(); await page.click('[data-mode="sales"]');assert.equal(await page.evaluate(()=>sku3Api.ready),true);
+    assert.equal(await page.evaluate(()=>sku3Api.getState().sales.find(r=>r.date==='2026-10-07'&&r.article==='931-606').qty),3);
+    assert.match(await page.$eval('#slKpis',el=>el.textContent),/Возвраты/);
+    await page.click('[data-mode="vision"]');
+    await page.evaluate(()=>{
+      const rows=[['LFL 1,2','LFL 2','№','Магазин','Регион','ФО','Площадь'],['A','A',1,'Магазин А','Регион','ФО',200,100,28,1000,357,300,30,107,700,42.86,5000,1000,1000,200,300,5,500,1000,10,2.5],['A','A',2,'Магазин Б','Регион','ФО',400,200,28,2000,357,500,25,89,1500,33.33,10000,2000,1000,200,250,5,1000,2000,10,2.5]];
+      const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'статистика расширенная');vIngest(2,wb,'stats.xlsx');
+    });
+    assert.equal(await page.$eval('#visionContainer #app',el=>el.classList.contains('hidden')),false);
+    const visionTabs=await page.$$eval('#visionContainer #tabs button',els=>els.map(el=>el.dataset.t));
+    for (const tab of visionTabs) await page.click('#visionContainer #tabs [data-t="'+tab+'"]');
+    assert.doesNotMatch(await page.$eval('#visionContainer #view',el=>el.textContent),/NaN/);
+
+    await page.click('[data-mode="dash"]');
+    assert.equal(await page.$eval('#dashCard',el=>getComputedStyle(el).fontSize),'16px');
+    const fs = require('node:fs');
+    const sample = fs.readdirSync(path.join(__dirname,'galamart-analyst')).find(name=>name.endsWith('.xlsx') && name.startsWith('╨Ю'));
+    if (sample) {
+      await (await page.$('#fileInput')).uploadFile(path.join(__dirname,'galamart-analyst',sample));
+      await page.waitForFunction(()=>rawData.length>7000);
+      assert.equal(await page.evaluate(()=>codeIndex.size),7400);
+      for (const mode of ['analysis','top100','gifts','zones','browse','dash']) await page.click('[data-mode="'+mode+'"]');
+      await page.evaluate(()=>DirectorApp.whenIdle());
+      await page.click('[data-mode="director"]');
+      for (const tab of ['today','prices','shortage','problem','shelf','clearance','efficiency','quality']) await page.click('[data-su-director="'+tab+'"]');
+      assert.doesNotMatch(await page.$eval('#directorCard',el=>el.textContent),/NaN/);
+      console.log('PASS: реальный отчёт — 7400 артикулов, включая аналитику директора');
     }
-  });
-  const { window } = dom;
-  window.XLSX = XLSX;
-
-  // дождаться DOMContentLoaded (defer-скрипты в jsdom выполняются при parse)
-  await new Promise(res => {
-    if (window.document.readyState === 'complete') return res();
-    window.addEventListener('load', res);
-    setTimeout(res, 3000);
-  });
-  await new Promise(r => setTimeout(r, 200));
-
-  const doc = window.document;
-
-  // ── 1. Все скрипты загружены, API на месте ──
-  ok(typeof window.sku3Api === 'object' && window.sku3Api !== null, 'sku3Api экспортирован (js/sku3.js)');
-  ok(typeof window.salesRenderMarkup === 'function', 'salesRenderMarkup доступен');
-  ok(typeof window.salesInit === 'function', 'salesInit доступен');
-  ok(jsErrors.length === 0, 'нет ошибок JS при загрузке страницы' + (jsErrors.length ? ': ' + jsErrors.slice(0, 3).join(' | ') : ''));
-
-  // ── 2. Вкладка «Продажи» есть среди сегментов ──
-  const salesBtn = doc.querySelector('.seg-btn[data-mode="sales"]');
-  ok(!!salesBtn, 'кнопка вкладки «💰 Продажи» присутствует');
-
-  // ── 3. Активация через клик по вкладке → activateSales() ──
-  salesBtn.click();
-  await new Promise(r => setTimeout(r, 150));
-  const card = doc.getElementById('salesCard');
-  ok(card && !card.classList.contains('hidden'), 'activateSales(): карточка «Продажи» показана');
-  ok(card.getAttribute('data-ready') === '1', 'разметка раздела отрендерена (data-ready)');
-  ok(card.getAttribute('data-inited') === '1', 'salesInit выполнен (data-inited)');
-  ok(doc.getElementById('slDynChart') !== null, 'canvas живой динамики создан');
-  ok(doc.querySelectorAll('#slScopeSeg button').length === 3, 'три скоупа: Day-day / Неделя / Произвольный');
-
-  // ── 4. Загрузка файлов продаж (путь импорта suadela через sku3Api.handleImportFiles) ──
-  const files = DAYS.map(d => {
-    const buf = buildWorkbook(d);
-    return new window.File([buf], `otchet_${d}.xlsx`, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-  });
-  await window.sku3Api.handleImportFiles(files);
-  window.sku3Api.confirmImport();
-  const st = window.sku3Api.getState();
-  ok(st.sales.length > 0, `импорт suadela распознал продажи: ${st.sales.length} записей`);
-  const datesInState = [...new Set(st.sales.map(s => s.date))].sort();
-  ok(datesInState.length === 4, `даты отчётов определены автоматически: ${datesInState.join(', ')}`);
-
-  // обновить дашборд как это делает importFiles в sales.js
-  window.dispatchEvent(new Event('storage'));
-  if (typeof window.salesRefresh === 'function') window.salesRefresh();
-
-  // перерендер через смену скоупа (штатный путь обновления)
-  doc.querySelector('#slScopeSeg button[data-sl-scope="dayday"]').click();
-  await new Promise(r => setTimeout(r, 250));
-
-  const kpis = doc.getElementById('slKpis');
-  ok(kpis && kpis.children.length >= 3, 'KPI отрисованы: ' + (kpis ? kpis.children.length : 0) + ' шт');
-  const totalTxt = kpis ? kpis.textContent : '';
-  ok(/Итого|₽/.test(totalTxt), 'в KPI присутствует выручка');
-
-  // ── 5. Таблицы: группы и артикулы ──
-  doc.querySelector('.sl-tab[data-sl-tab="groups"]').click();
-  await new Promise(r => setTimeout(r, 120));
-  const gRows = doc.querySelectorAll('#slGroupTable tbody tr');
-  ok(gRows.length >= 2, 'группы (по префиксу артикула): ' + gRows.length + ' строк');
-
-  doc.querySelector('.sl-tab[data-sl-tab="skus"]').click();
-  await new Promise(r => setTimeout(r, 120));
-  const sRows = doc.querySelectorAll('#slSkuTable tbody tr');
-  ok(sRows.length === 3, 'артикулы: ' + sRows.length + ' строк (ожидалось 3)');
-
-  // клик по строке артикула — добавление серии на график
-  sRows[0].click();
-  await new Promise(r => setTimeout(r, 150));
-  doc.querySelector('.sl-tab[data-sl-tab="dyn"]').click();
-  await new Promise(r => setTimeout(r, 150));
-
-  // ── 6. Скоупы ──
-  doc.querySelector('#slScopeSeg button[data-sl-scope="week"]').click();
-  await new Promise(r => setTimeout(r, 150));
-  const weekSel = doc.getElementById('slWeekSel');
-  ok(weekSel && weekSel.options.length >= 1, 'недельный скоуп: выбрано ' + (weekSel ? weekSel.options.length : 0) + ' недель');
-  doc.querySelector('#slScopeSeg button[data-sl-scope="custom"]').click();
-  await new Promise(r => setTimeout(r, 150));
-  ok(!doc.getElementById('slFromWrap').hidden && !doc.getElementById('slToWrap').hidden, 'произвольный скоуп: поля дат видны');
-  const from = doc.getElementById('slDateFrom'), to = doc.getElementById('slDateTo');
-  from.value = '2026-10-06'; to.value = '2026-10-07';
-  from.dispatchEvent(new window.Event('change', { bubbles: true }));
-  await new Promise(r => setTimeout(r, 150));
-  ok(true, 'произвольный период применён без ошибок');
-  doc.querySelector('#slScopeSeg button[data-sl-scope="dayday"]').click();
-  await new Promise(r => setTimeout(r, 150));
-
-  // ── 7. Живая динамика и воспроизведение ──
-  const liveBtn = doc.querySelector('[data-sl-action="live"]');
-  liveBtn.click();
-  await new Promise(r => setTimeout(r, 400));
-  ok(liveBtn.textContent.includes('Стоп') || liveBtn.classList.contains('active') || doc.querySelector('.sl-live-badge'), 'живой режим включается');
-  liveBtn.click(); // выключить
-
-  const playBtn = doc.querySelector('[data-sl-action="play"]');
-  playBtn.click();
-  await new Promise(r => setTimeout(r, 700));
-  ok(true, 'воспроизведение динамики стартовало без ошибок');
-  const stopBtn = doc.querySelector('[data-sl-action="stop"]');
-  if (stopBtn && !stopBtn.disabled) stopBtn.click();
-  await new Promise(r => setTimeout(r, 200));
-
-  // ── 8. Отсечка: ввод суммы прямо на графике (через modal-путь openCutModal) ──
-  doc.querySelector('.sl-tab[data-sl-tab="cuts"]').click();
-  await new Promise(r => setTimeout(r, 120));
-  const addCutBtn = doc.querySelector('[data-sl-action="add-cut"]');
-  ok(!!addCutBtn, 'кнопка «➕ Добавить отсечку» есть');
-  addCutBtn.click();
-  await new Promise(r => setTimeout(r, 150));
-  const cutModal = doc.getElementById('slCutModal');
-  ok(cutModal && cutModal.classList.contains('open'), 'модалка отсечки открыта');
-  const sumInput = cutModal.querySelector('#slCutThreshold');
-  const dateInput = cutModal.querySelector('#slCutDate');
-  ok(!!sumInput && !!dateInput, 'в модалке есть поля суммы порога и даты отсечки');
-  if (sumInput && dateInput) {
-    // найти кнопку сохранения
-    const saveBtn = cutModal.querySelector('[data-sl-action="save-cut"]');
-    ok(!!saveBtn, 'кнопка сохранения отсечки есть');
-    sumInput.value = '11000';
-    sumInput.dispatchEvent(new window.Event('input', { bubbles: true }));
-    dateInput.value = '2026-10-07';
-    dateInput.dispatchEvent(new window.Event('change', { bubbles: true }));
-    saveBtn.click();
-    await new Promise(r => setTimeout(r, 250));
-    const cutsList = doc.getElementById('slCutsList');
-    ok(cutsList && cutsList.textContent.length > 20, 'отсечка сохранена и отображается в списке');
-    ok(/до|после|\/день|↓|↑|%|₽/i.test(cutsList.textContent), 'система показала динамику до/после переоценки');
-    // проверка корректности расчёта: для «Итого» до 07.10 среднее (28000+31200)/2=29600, после (16900+16500)/2=16700 → −44%
-    ok(/−|-|↓/.test(cutsList.textContent) && /%\)?/.test(cutsList.textContent), 'зафиксировано падение продаж после отсечки (в %/)');
-    // проверка persist
-    const saved = JSON.parse(window.localStorage.getItem('sales_dashboard_v1_cuts') || '[]');
-    ok(Array.isArray(saved) && saved.length >= 1, 'отсечка сохранена в localStorage: ' + saved.length);
-    const c0 = saved[0];
-    ok(c0 && c0.date === '2026-10-07' && Number(c0.threshold) === 11000, 'поля отсечки сохранены верно (дата + сумма порога)');
-  }
-
-  // ── 9. Метрика qty ──
-  const metricSel = doc.getElementById('slMetricSel');
-  metricSel.value = 'qty';
-  metricSel.dispatchEvent(new window.Event('change', { bubbles: true }));
-  await new Promise(r => setTimeout(r, 200));
-  ok(true, 'переключение метрики на количество без ошибок');
-
-  // ── 10. Поиск/фильтр ──
-  const search = doc.getElementById('slSearchInput');
-  search.value = '931-606';
-  search.dispatchEvent(new window.Event('input', { bubbles: true }));
-  await new Promise(r => setTimeout(r, 300));
-  ok(true, 'фильтр по артикулу применён без ошибок');
-  search.value = '';
-  search.dispatchEvent(new window.Event('input', { bubbles: true }));
-  await new Promise(r => setTimeout(r, 200));
-
-  // ── 11. Переключение на другие вкладки и возврат (hide/show) ──
-  doc.querySelector('.seg-btn[data-mode="dash"]').click();
-  await new Promise(r => setTimeout(r, 120));
-  ok(card.classList.contains('hidden'), 'при уходе с вкладки «Продажи» карточка скрывается');
-  salesBtn.click();
-  await new Promise(r => setTimeout(r, 150));
-  ok(!card.classList.contains('hidden'), 'повторное открытие вкладки работает (idempotent init)');
-
-  // ── 12. Кнопка «Обработать» в режиме sales ──
-  const processBtn = doc.getElementById('processBtn');
-  processBtn.disabled = false;
-  processBtn.click();
-  await new Promise(r => setTimeout(r, 150));
-  ok(!card.classList.contains('hidden'), '«Обработать» в режиме «Продажи» активирует раздел');
-
-  // ── 13. Итоговая проверка ошибок ──
-  ok(jsErrors.length === 0, 'за весь сценарий нет необработанных JS-ошибок' + (jsErrors.length ? ':\n' + jsErrors.slice(0, 5).join('\n') : ''));
-
-  console.log(failures === 0 ? '\n🎉 ВСЕ ПРОВЕРКИ ПРОЙДЕНЫ' : `\n⚠️ ПРОВАЛОВ: ${failures}`);
-  process.exit(failures === 0 ? 0 : 1);
+    await page.goto(pathToFileURL(path.resolve(__dirname,'suadela/suadela.html')).href);
+    await page.waitForFunction(()=>location.hash==='#sku3'&&!!window.sku3Api);
+    await page.evaluate(()=>sku3Api.ready);
+    assert.deepEqual(errors,[]);assert.deepEqual(requests,[]);
+    console.log('PASS: file://, stock/slow/dead, gifts, zones, markdown/export, 3SKU payouts, parser/replacement, IndexedDB reload, offline entry links');
+  } finally { await browser.close(); }
 }
-
-main().catch(e => { console.error('FATAL', e); process.exit(1); });
+run().catch(error=>{console.error(error);process.exitCode=1;});

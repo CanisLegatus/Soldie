@@ -73,7 +73,7 @@ function getBrowseFiltered() {
 function applyBrowse() {
   if (!browseData) return;
   const filtered = getBrowseFiltered();
-  renderTable(filtered.slice(0, BROWSE_LIMIT), 'browse', 0);
+  renderTable(filtered, 'browse', 0);
   resultEl.classList.remove('hidden');
   const parts = [];
   const checked = [...document.querySelectorAll('.cube-check-input:checked')].map(c => CUBE_LABEL_BY_KEY[c.value]);

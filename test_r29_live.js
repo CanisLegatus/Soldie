@@ -1,11 +1,11 @@
 // Живая проверка интеграции R29 в galamart-analyst (headless Chrome)
-const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer-core');
 const path = require('path');
 const fs = require('fs');
 
 (async () => {
   // ── Генерация тестовых input1/input2 через сам XLSX в браузере ──
-  const browser = await puppeteer.launch({ args: ['--no-sandbox', '--disable-setuid-sandbox'] });
+  const browser = await puppeteer.launch({ executablePath: process.env.CHROME_BIN || '/usr/bin/chromium', args: ['--no-sandbox', '--disable-setuid-sandbox'] });
   const page = await browser.newPage();
   const errors = [];
   page.on('console', (m) => { if (m.type() === 'error') errors.push('[console] ' + m.text()); });
@@ -69,7 +69,7 @@ const fs = require('fs');
       [1010, 'Йогурт 300мл', 79.0],
     ];
     const rows2 = [
-      ['Код', 'Товар', 'Цена ТН, руб.', 'Цена маг, руб.', 'Себестоимость', 'Продано', 'Склад', 'Группа 1', 'Группа 2', 'Группа 3'],
+      ['Код', 'Товар', 'Цена ТН, руб.', 'Цена маг, руб.', 'Себестоимость', 'Продано', 'Склад', 'Группа 1', 'Группа 2', 'Группа 3', 'ТО, руб', 'ТО СС, руб'],
       [1001, 'Молоко 900мл', 99, 105, 60, 120, 40, 'Бакалея', 'Молочное', 'Молоко'],
       [1002, 'Хлеб белый', 50, 55, 25, 300, 60, 'Бакалея', 'Хлеб', 'Хлеб белый'],
       [1003, 'Сахар 1кг', 85, 90, 55, 90, 30, 'Бакалея', 'Сыпучее', 'Сахар'],
@@ -82,6 +82,7 @@ const fs = require('fs');
       [1010, 'Йогурт 300мл', 89, 95, 50, 60, 20, 'Бакалея', 'Молочное', 'Йогурт'],
       [9999, 'Товар вне input1', 100, 110, 60, 5, 5, 'Прочее', 'Прочее', 'Прочее'],
     ];
+    rows2.slice(1).forEach(row => row.push(row[5] * row[3] * 0.8, row[5] * row[4]));
     const buf1 = makeSheet(rows1);
     const buf2 = makeSheet(rows2);
     const f1 = new File([buf1], 'input1.xlsx', { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
@@ -135,6 +136,8 @@ const fs = require('fs');
   results.saveJson = await page.evaluate(async () => {
     let capturedUrl = null;
     const origCreate = URL.createObjectURL.bind(URL);
+    const origClick = HTMLAnchorElement.prototype.click;
+    HTMLAnchorElement.prototype.click = function() {};
     const blobs = [];
     const origBlob = window.Blob;
     URL.createObjectURL = (b) => { blobs.push(b); return 'blob:fake/' + blobs.length; };
@@ -142,6 +145,7 @@ const fs = require('fs');
     try { document.querySelector('#r29Card #saveJsonBtn').click(); } catch (e) { err = e.message; }
     await new Promise(r => setTimeout(r, 300));
     URL.createObjectURL = origCreate;
+    HTMLAnchorElement.prototype.click = origClick;
     if (!blobs.length) return { clicked: true, blobCaptured: false, err };
     const text = await blobs[0].text();
     window.__savedJson = text;
@@ -228,7 +232,7 @@ const fs = require('fs');
     sel.value = 'tn';
     sel.dispatchEvent(new Event('change', { bubbles: true }));
     await new Promise(r => setTimeout(r, 200));
-    return 'ok';
+    return {disabled:sel.disabled, selected:sel.value};
   });
 
   // 14. Добавление артикула вручную
@@ -259,6 +263,17 @@ const fs = require('fs');
     return c.classList.contains('hidden');
   });
 
+  await browser.close();
+  require('node:assert/strict').equal(results.toMode.disabled, true);
+  require('node:assert/strict').equal(Number(results.statsAfterSelect.gTO.replace(/\s/g,'')), 18000);
+  require('node:assert/strict').equal(Number(results.statsAfterSelect.gVP.replace(/\s/g,'')), 10500);
+  require('node:assert/strict').equal(results.cardVisible, true);
+  require('node:assert/strict').equal(results.elementsOk.missing.length, 0);
+  require('node:assert/strict').equal(results.tabs.length > 0, true);
+  require('node:assert/strict').equal(results.hiddenOnSwitch, true);
+  require('node:assert/strict').equal(results.saveJson.blobCaptured, true);
+  require('node:assert/strict').equal(results.printSelected.printCalled, true);
+  require('node:assert/strict').deepEqual(errors, []);
   console.log(JSON.stringify(results, null, 2));
   console.log('=== JS ERRORS ===');
   console.log(errors.length ? errors.join('\n') : '(none)');

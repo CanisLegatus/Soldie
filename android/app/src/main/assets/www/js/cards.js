@@ -28,6 +28,7 @@ function openProduct(code, backPath) {
   const backBtnHtml = backPath ? `<button class="back-btn" type="button" data-back-groups="${escapeHtml(JSON.stringify(backPath))}">← Назад к группе</button>` : '';
 
   const alerts = [];
+  if (isSlowRow(r)) alerts.push({ cls: 'alert-warn', text: '🐢 Медленный сток · ' + slowShare(r).toFixed(1) + '% продано. ' + SLOW_HINT });
   if (ck) alerts.push({ cls: 'alert-dark', text: `🏷 Товар стоит в КУБЕ: <b>${escapeHtml(cubeRaw)}</b>${ck === 'ЗО' || ck === 'ЗО сеть' ? ' — отгрузки запрещены' : ''}` });
   if (stock <= 0 && sold > 0) alerts.push({ cls: 'alert-fire', text: '🚫 Остаток на складе закончился при живых продажах' });
   else if (isFinite(sdl.days) && sdl.days <= 14 && stock > 0)
@@ -59,6 +60,7 @@ function openProduct(code, backPath) {
       <button class="main-modal-close" type="button" data-modal-close>✕ Закрыть</button>
     </div>
     ${alerts.length ? `<div class="alerts">${alerts.map(a => `<div class="alert-item ${a.cls}">${a.text}</div>`).join('')}</div>` : ''}
+    ${zoneMembershipHtml(String(r['код']).trim())}
     <div class="kpi-grid">
       ${tiles.map(t => `<div class="kpi ${t.cls || ''}"><div class="kpi-label">${t.l}</div><div class="kpi-value">${t.v}</div>${t.sub ? `<div class="kpi-sub">${t.sub}</div>` : ''}</div>`).join('')}
     </div>
@@ -165,6 +167,8 @@ function renderGroupCard() {
   const tops = [...items].sort((a, b) => metricFn(b) - metricFn(a)).slice(0, 10);
 
   const alerts = [];
+  const slowItems = items.filter(isSlowRow);
+  if (slowItems.length) alerts.push({ cls:'alert-warn', text:'🐢 Медленный сток: ' + slowItems.length + ' SKU. ' + SLOW_HINT });
   tops.forEach(r => {
     const label = `${escapeHtml(r['код'])} · ${escapeHtml(truncateStr(r['товар'], 42))}`;
     const stock = num(r['склад кол']);

@@ -49,10 +49,11 @@ function renderDashboard() {
     { key: 'to', icon: '💰', label: 'ТО (оборот)', value: fmt(A.to) + ' ₽', sub: `валовая прибыль ${fmt(A.gp)} ₽` },
     { key: 'gp', icon: '📈', label: 'Валовая прибыль', value: fmt(A.gp) + ' ₽', sub: `маржа ${A.margin.toFixed(1)}% · наценка ${A.markup.toFixed(1)}%` },
     { key: 'markup', icon: '🏷', label: 'Наценка магазина', value: A.markup.toFixed(1) + '%', sub: `по складу ${markupStock.toFixed(1)}% · маржа ${A.margin.toFixed(1)}%` },
-    { key: 'sales', icon: '🛒', label: 'Продажи', value: fmt(A.sold) + ' шт', sub: `средняя цена ${fmt(avgPrice, 2)} ₽` },
+    { key: 'sales', icon: '🛒', label: 'Продажи', value: fmt(A.sold) + ' шт', sub: `средняя цена ${fmt(avgPrice, 2)} ₽ · возвраты ${fmt(A.returns)} шт` },
     { key: 'stock', icon: '📦', label: 'Склад', value: fmt(A.stockSum) + ' ₽', sub: `${fmt(A.stock)} шт · оборачиваемость ${fmtDays(A.turnover)} дн.` },
     { key: 'dead', icon: '🧊', label: 'Мёртвый сток', value: fmt(A.deadSum) + ' ₽', sub: `${A.deadCount} SKU · ${deadPctSku.toFixed(1)}% SKU · ${deadPctStock.toFixed(1)}% склада`, cls: deadPctStock > 15 ? 'dk-alert' : '' },
-    { key: 'turnover', icon: '🔄', label: 'Оборачиваемость', value: fmtDays(A.turnover) + ' дн.', sub: `скорость ${A.rate.toFixed(1)} шт/день`, cls: !isFinite(A.turnover) ? 'dk-alert' : '' },
+    { key: 'slow', icon: '🐢', label: 'Медленный сток · оценка', value: fmt(A.slowSum) + ' ₽', sub: `${A.slowCount} SKU · продажи за 28 дней < 26,7% начального стока` },
+    { key: 'turnover', icon: '🔄', label: 'Оборачиваемость', value: fmtDays(A.turnover) + ' дн.', sub: `по себестоимости ${fmtDays(A.costTurnover)} дн. · ${A.rate.toFixed(1)} шт/день`, cls: !isFinite(A.turnover) ? 'dk-alert' : '' },
     { key: 'top100', icon: '🏆', label: 'Доля ТОП-100 в ТО', value: share + '%', sub: fmt(top100sum) + ' ₽', action: 'top100' }
   ];
 
@@ -72,6 +73,7 @@ function renderDashboard() {
       <div class="dash-card">
         <h4>🧭 Быстрые переходы</h4>
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:12px">
+          <button type="button" class="chip" data-jump-mode="director">🧭 Задачи директора</button>
           <button type="button" class="chip" data-jump-mode="analysis">🔬 Анализ</button>
           <button type="button" class="chip" data-jump-mode="top100">🏆 ТОП-100</button>
           <button type="button" class="chip" data-jump-mode="r29">🎯 R29</button>
@@ -260,6 +262,10 @@ function openDashDrill(key) {
         <tbody>${gRows}</tbody></table></div>`, 'stock');
     return;
   }
+  if (key === 'slow') {
+    openProductListDrill('🐢 Медленный сток · оценка за 28 дней', rawData.filter(isSlowRow).sort((a, b) => itemFrozen(b) - itemFrozen(a)), SLOW_HINT);
+    return;
+  }
   if (key === 'dead') {
     const dead = rawData.filter(isDeadRow).sort((a, b) => itemFrozen(b) - itemFrozen(a));
     const rows = dead.slice(0, 500).map(r => {
@@ -296,6 +302,7 @@ function openDashDrill(key) {
       <td>${fmt(e.a.to)} ₽</td>
     </tr>`).join('');
     drillShell('🔄 Оборачиваемость', 'Запас ÷ скорость продаж. Чем меньше дней — тем быстрее оборот.',
+      tileHtml('По себестоимости', fmtDays(A.costTurnover) + ' дн.', '', 'остаток по себестоимости ÷ (ТО СС / 28)') +
       tileHtml('По магазину', fmtDays(A.turnover) + ' дн.', 'kpi-accent', `${A.rate.toFixed(1)} шт/день суммарно`) +
       tileHtml('Склад', fmt(A.stock) + ' шт') +
       tileHtml('Продано', fmt(A.sold) + ' шт'),

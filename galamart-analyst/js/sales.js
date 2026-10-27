@@ -276,7 +276,7 @@
   }
 
   function saveView() {
-    try { localStorage.setItem(SKEY, JSON.stringify(view)); } catch (e) {}
+    try { localStorage.setItem(SKEY, JSON.stringify(view)); } catch (e) { toast('Настройки вида не сохранены: ' + e.message, 'error'); }
   }
 
   function loadCuts() {
@@ -288,7 +288,7 @@
   }
 
   function persistCuts() {
-    try { localStorage.setItem(SKEY + '_cuts', JSON.stringify(cuts)); } catch (e) {}
+    try { localStorage.setItem(SKEY + '_cuts', JSON.stringify(cuts)); } catch (e) { toast('Не удалось сохранить отсечки: ' + e.message, 'error'); }
   }
 
   let view = loadView();
@@ -337,11 +337,13 @@
 
   function getSales() {
     const st = api() && api().getState ? api().getState() : null;
-    return st && Array.isArray(st.sales) ? st.sales : [];
+    return st && Array.isArray(st.sales) ? st.sales.filter(r => Number(r.qty) > 0) : [];
   }
 
   function allDates() {
     const set = new Set();
+    const st = api() && api().getState ? api().getState() : null;
+    ((st && st.imports) || []).forEach(r => { if (r.date) set.add(r.date); });
     getSales().forEach(r => { if (r.date) set.add(r.date); });
     return [...set].sort();
   }
@@ -408,7 +410,7 @@
     } catch (e) { groupOverrides = {}; }
   }
   function persistOverrides() {
-    try { localStorage.setItem(SKEY + '_overrides', JSON.stringify(groupOverrides)); } catch (e) {}
+    try { localStorage.setItem(SKEY + '_overrides', JSON.stringify(groupOverrides)); } catch (e) { toast('Группировки не сохранены: ' + e.message, 'error'); }
   }
 
   function effectiveGroup(record, catalog) {
@@ -518,6 +520,7 @@
       const v = series.values[i] || 0;
       (d < cutDate ? before : after).push(v);
     });
+    if (!before.length || !after.length) return null;
     const avgB = before.length ? sumArr(before) / before.length : 0;
     const avgA = after.length ? sumArr(after) / after.length : 0;
     const delta = avgA - avgB;
@@ -628,7 +631,12 @@
       }
     }
 
+    const st = api() && api().getState ? api().getState() : null;
+    const returns = ((st && st.sales) || []).filter(r => Number(r.qty) < 0 && info.dates.includes(r.date) && matchesQuery(r, view.search.trim(), catalog));
+    const returnQty = -returns.reduce((sum, r) => sum + Number(r.qty), 0);
+    const returnSum = Math.abs(returns.reduce((sum, r) => sum + (Number(r.sum) || 0), 0));
     box.innerHTML = `
+      <div class="sl-kpi"><div class="sl-kpi-label">Возвраты · отдельно</div><div class="sl-kpi-value">${fmtNum(returnQty)} шт</div><div class="sl-kpi-sub">${fmtMoney(returnSum)} · не входят в продажи и мотивацию</div></div>
       <div class="sl-kpi"><div class="sl-kpi-label">Выручка за период</div><div class="sl-kpi-value">${fmtMoney(t.sum)}</div>${cmpHtml}</div>
       <div class="sl-kpi"><div class="sl-kpi-label">Продано штук</div><div class="sl-kpi-value">${fmtNum(t.qty)}</div><div class="sl-kpi-sub">${fmtNum(t.rows)} строк продаж</div></div>
       <div class="sl-kpi"><div class="sl-kpi-label">Средняя продажа / день</div><div class="sl-kpi-value">${fmtMoney(perDay)}</div><div class="sl-kpi-sub">${t.days} дн. в периоде</div></div>
@@ -1324,6 +1332,7 @@
     });
   }
 
+  window.addEventListener('sku3-data-changed', () => { if (document.getElementById('salesCard')?.getAttribute('data-inited')) renderAll(); });
   window.salesInit = function () {
     if (document.getElementById('salesCard').getAttribute('data-inited')) return;
     document.getElementById('salesCard').setAttribute('data-inited', '1');

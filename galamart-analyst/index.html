@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#2563eb">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <title>Менеджер уценки Галамарт (v12 · модульная сборка)</title>
+  <title>Suadela · управление магазином</title>
   <!--
     v12 — РАСПИЛ на модули без изменения функционала.
     Структура:
@@ -346,28 +346,31 @@
     .kpi-label { font-size: 0.72rem; color: var(--text-muted); margin-bottom: 3px; }
     .kpi-value { font-size: 1.05rem; font-weight: 700; }
   </style>
+<link rel="stylesheet" href="director.css">
+<link rel="stylesheet" href="suadela.css">
 </head>
 <body>
-<div class="container">
-  <h1>📉 Менеджер уценки Галамарт</h1>
+<aside id="su-sidebar"><a class="su-brand" href="#vision">Suadela<small>Управление магазином</small></a><nav id="su-navigation" aria-label="Разделы приложения"></nav></aside><div class="container su-main">
+  <header id="su-topbar"><button id="su-menu" aria-label="Открыть меню" aria-expanded="false">☰</button><div><h1 id="su-title">Vision</h1><span id="su-context">Рабочее место директора</span></div></header>
 
   <div class="card">
     <div class="controls" style="align-items: flex-start;">
-      <div class="control-group" style="min-width: 280px;">
+      <div id="stockImportGroup" class="control-group" style="min-width: 280px;">
         <label>1. Загрузите отчёт</label>
         <input type="file" id="fileInput" accept=".xlsx,.xls,.csv">
       </div>
-      <div class="control-group" style="flex: 1; min-width: 480px;">
+      <div id="su-original-nav" hidden class="control-group">
         <label>Разделы</label>
         <div class="mode-bar" style="gap: 18px;">
           <div class="mode-cluster">
             <span class="cluster-label">Аналитика</span>
             <div class="segmented">
-              <button type="button" class="seg-btn active" data-mode="dash">📊 Дашборд</button>
+              <button type="button" class="seg-btn" data-mode="dash">📊 Дашборд</button>
+              <button type="button" class="seg-btn" data-mode="director">🧭 Директор</button>
               <button type="button" class="seg-btn" data-mode="analysis">🔬 Анализ</button>
               <button type="button" class="seg-btn" data-mode="top100">🏆 ТОП-100</button>
               <button type="button" class="seg-btn" data-mode="r29">🎯 R29</button>
-              <button type="button" class="seg-btn" data-mode="vision">👁 Vision</button>
+              <button type="button" class="seg-btn active" data-mode="vision">👁 Vision</button>
               <button type="button" class="seg-btn" data-mode="sales">💰 Продажи</button>
             </div>
           </div>
@@ -427,6 +430,7 @@
   <div id="sku3Card" class="hidden"></div>
 
   <div id="salesCard" class="hidden"></div>
+  <div id="directorCard" class="card hidden"></div>
 
   <div id="dashCard" class="card hidden">
     <div class="result-header">
@@ -454,6 +458,10 @@
     <div class="result-header">
       <h2 id="resultTitle">Результаты</h2>
       <button class="btn-export" data-table-export="mdTableContainer">⬇️ Выгрузить в Excel</button>
+    </div>
+    <div id="mdExportOptions" class="hidden" style="margin:8px 0">
+      <label class="su-export-label">Вариант экспорта <select id="mdExportType"><option value="prices">Артикул + новая цена · все</option><option value="changed">Артикул + изменённая пользователем цена</option><option value="full">Полная таблица найденных товаров</option><option value="codes">Только артикулы</option></select></label><input type="checkbox" id="mdChangedOnly" hidden>
+      <div class="hint">Рекомендация цены — оценка по текущему темпу. Переоценки: вторник и пятница; «Продать до» — также в последний день.</div>
     </div>
     <div id="mdTotals" class="md-totals hidden"></div>
     <div id="mdTableContainer" class="table-wrapper">
@@ -495,6 +503,7 @@
 
   <div id="giftsCard" class="card hidden">
     <div class="result-header">
+      <label class="su-export-label">Экспорт <select id="giftExportType"><option value="prices">Артикул + новая цена · все</option><option value="changed">Артикул + изменённая пользователем цена</option><option value="full" selected>Полная таблица найденных товаров</option><option value="codes">Только артикулы</option></select></label>
       <h2 id="giftsTitle">🎁 Выбор подарка</h2>
       <button class="btn-export" data-table-export="giftsContent">⬇️ Выгрузить в Excel</button>
     </div>
@@ -506,6 +515,9 @@
       <select id="giftSel1" class="group-select" data-all="Весь магазин"></select>
       <select id="giftSel2" class="group-select" data-all="Группа 2: все"></select>
       <select id="giftSel3" class="group-select" data-all="Группа 3: все"></select>
+      <fieldset id="giftCubeFilter" class="su-checks"><legend>КУБы</legend><label><input type="checkbox" value="ЗО"> ЗО</label><label><input type="checkbox" value="ЗО сеть"> ЗО сеть</label><label><input type="checkbox" value="ВНЕ_АМ"> ВнеАМ</label></fieldset>
+      <button type="button" id="giftCubeReset" class="btn-ghost">Все КУБы</button>
+      <select id="giftStockFilter" aria-label="Состояние стока"><option value="">Любой сток</option><option value="dead">Мёртвый сток</option><option value="slow">Медленный сток · оценка</option></select>
       <label class="cube-check"><input type="checkbox" id="giftInStock" checked> только со стоком</label>
       <span class="hint">показаны товары группы с себестоимостью не выше лимита</span>
     </div>
@@ -557,6 +569,10 @@
 <script src="js/android-bridge.js"></script>
 
 <!-- Модули приложения -->
+<script defer src="js/business.js"></script>
+<script defer src="js/director-rules.js"></script>
+<script defer src="js/director-store.js"></script>
+<script defer src="js/export-rules.js"></script>
 <script defer src="js/core.js"></script>
 <script defer src="js/markdown.js"></script>
 <script defer src="js/browse.js"></script>
@@ -570,6 +586,8 @@
 <script defer src="js/zones-gifts.js"></script>
 <script defer src="js/sku3.js"></script>
 <script defer src="js/sales.js"></script>
+<script defer src="js/director.js"></script>
 <script defer src="js/app.js"></script>
+<script defer src="js/shell.js"></script>
 </body>
 </html>

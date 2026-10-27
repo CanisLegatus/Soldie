@@ -1078,11 +1078,9 @@
         <input type="file" id="fileJson" accept=".json,application/json" style="display:none" />
 
         <label class="select-label">
-          ТО по цене
-          <select id="toModeSelect">
-            <option value="zone" selected>зоны</option>
-            <option value="item">товара</option>
-            <option value="tn">цены тн</option>
+          ТО из отчёта
+          <select id="toModeSelect" disabled>
+            <option value="fact" selected>фактический ТО</option>
           </select>
         </label>
       </div>
@@ -1314,7 +1312,7 @@
           selection: new Map(),       // zoneKey -> Set(codes)
 
           activeZoneKey: null,
-          toMode: 'zone',             // zone | item | tn
+          toMode: 'fact',             // zone | item | tn
           filter: '',
 
           hasGroupCols: false,        // найдены ли «Группа 1/2/3» в input2
@@ -1567,6 +1565,8 @@
           );
 
           const colCost = findCol(headers, ['себ', 'себестоимость'], []);
+          const colFactTO = headers.findIndex(h => /^то[,]?\s*руб[.]?$/.test(h));
+          const colFactCost = headers.findIndex(h => /^то\s*сс[,]?\s*руб[.]?$/.test(h));
           const colSold = findCol(headers, ['продано'], []);
           const colStock = findCol(headers, ['склад'], ['склад кол', 'склад']);
 
@@ -1662,7 +1662,8 @@
               cost: null,
               sold: 0,
               stock: 0,
-              vp: 0,
+              factTO: 0,
+            vp: 0,
               vpIssue: false,
               vpIssueText: '',
 
@@ -1710,6 +1711,8 @@
           );
 
           const colCost = findCol(headers, ['себ', 'себестоимость'], []);
+          const colFactTO = headers.findIndex(h => /^то[,]?\s*руб[.]?$/.test(h));
+          const colFactCost = headers.findIndex(h => /^то\s*сс[,]?\s*руб[.]?$/.test(h));
           const colSold = findCol(headers, ['продано'], []);
           const colStock = findCol(headers, ['склад'], ['склад кол', 'склад']);
           const colName = findCol(headers, ['товар', 'название', 'наименование', 'name'], []);
@@ -1755,14 +1758,13 @@
 
             // ВП = (Цена маг − Себестоимость) × Продано.
             // Если данных не хватает и были продажи — ВП не считаем (0) и помечаем товар.
+            const factTO = toNumber(getRowValue(row, colFactTO));
+            const factCost = toNumber(getRowValue(row, colFactCost));
             let vpRow = 0;
             let rowIssue = '';
 
-            if (isFinite(priceMag) && isFinite(cost)) {
-              vpRow = (priceMag - cost) * soldZero;
-            } else if (soldZero !== 0) {
-              rowIssue = getVpIssueText(isFinite(priceMag), isFinite(cost));
-            }
+            if (isFinite(factTO) && isFinite(factCost)) vpRow = factTO - factCost;
+            else rowIssue = 'Нет фактического ТО или ТО СС в отчёте';
 
             let item = state.items.get(code);
 
@@ -1785,7 +1787,8 @@
 
                 sold: 0,
                 stock: 0,
-                vp: 0,
+                factTO: 0,
+            vp: 0,
                 vpIssue: false,
                 vpIssueText: '',
 
@@ -1805,6 +1808,7 @@
               item.sold = 0;
               item.stock = 0;
               item.vp = 0;
+              item.factTO = 0;
               item.vpIssue = false;
               item.vpIssueText = '';
             }
@@ -1832,6 +1836,7 @@
             item.sold += soldZero;
             item.stock += stockZero;
             item.vp += vpRow;
+            item.factTO = (item.factTO || 0) + (isFinite(factTO) ? factTO : 0);
 
             if (rowIssue) {
               item.vpIssue = true;
@@ -2021,6 +2026,7 @@
 
             sold: 0,
             stock: 0,
+            factTO: 0,
             vp: 0,
             vpIssue: false,
             vpIssueText: '',
@@ -2078,27 +2084,8 @@
          * Stats
          ***********************/
 
-        function getToModeLabel() {
-          if (state.toMode === 'zone') return 'по цене комм.зоны';
-          if (state.toMode === 'item') return 'по цене товара';
-          return 'по цене тн';
-        }
-
-        function getItemTO(item, zoneKey) {
-          const zone = state.zonesByKey.get(zoneKey);
-
-          let price = 0;
-
-          if (state.toMode === 'zone') {
-            price = zone?.price ?? item?.price ?? item?.priceMag ?? item?.priceTn ?? 0;
-          } else if (state.toMode === 'tn') {
-            price = item?.priceTn ?? item?.price ?? item?.priceMag ?? zone?.price ?? 0;
-          } else {
-            price = item?.price ?? item?.priceMag ?? item?.priceTn ?? zone?.price ?? 0;
-          }
-
-          return safeNum(price) * safeNum(item?.sold);
-        }
+        function getToModeLabel() { return 'факт из отчёта'; }
+        function getItemTO(item) { return safeNum(item?.factTO); }
 
         function computeZoneStats(zoneKey) {
           const set = state.selection.get(zoneKey) || new Set();
@@ -2374,7 +2361,7 @@
               : `<td class="muted" title="${escapeHtml(groupHierarchy)}">—</td>`;
 
             const vpCell = item.vpIssue
-              ? `<td class="right" title="${escapeHtml(item.vpIssueText || '')}">⚠ 0</td>`
+              ? `<td class="right" title="${escapeHtml(item.vpIssueText || '')}">⚠ —</td>`
               : `<td class="right">${fmtCellNum(item.vp)}</td>`;
 
             return `
@@ -2492,7 +2479,7 @@
 
           const issueCount = entries.filter(entry => entry.item.vpIssue).length;
           noteEl.innerHTML = issueCount
-            ? `⚠ Товаров с неполными данными для ВП среди выбранных: <b>${fmtInt(issueCount)}</b> — их ВП не рассчитана и учтена как 0 (жёлтые строки в таблице).`
+            ? `⚠ Товаров с неполными данными для ВП среди выбранных: <b>${fmtInt(issueCount)}</b> — итоги ТО/ВП неполные. Загрузите отчёт с колонками «ТО, руб» и «ТО СС, руб» (жёлтые строки).`
             : '';
 
           if (!entries.length) {
@@ -2581,7 +2568,7 @@
             const price = entry.item.price ?? entry.item.priceMag ?? entry.item.priceTn ?? null;
 
             const vpCell = entry.item.vpIssue
-              ? `<td class="right" title="${escapeHtml(entry.item.vpIssueText || '')}">⚠ 0</td>`
+              ? `<td class="right" title="${escapeHtml(entry.item.vpIssueText || '')}">⚠ —</td>`
               : `<td class="right">${fmtCellNum(entry.item.vp)}</td>`;
 
             return `
@@ -2684,10 +2671,8 @@
 
           state.selection = loadedSelection;
 
-          if (obj.toMode && ['zone', 'item', 'tn'].includes(obj.toMode)) {
-            state.toMode = obj.toMode;
-            $('toModeSelect').value = obj.toMode;
-          }
+          state.toMode = 'fact';
+          $('toModeSelect').value = 'fact';
 
           let desiredActiveKey = obj.activeZoneKey
             ? normalizePriceValue(obj.activeZoneKey).key

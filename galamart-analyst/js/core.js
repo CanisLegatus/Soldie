@@ -61,7 +61,7 @@ const modalBox        = document.getElementById('modalBox');
 let rawData = [];
 let codeIndex = new Map();
 let analogCache = null;
-let currentMode = 'dash';
+let currentMode = 'vision';
 let browseData = null;
 let currentGroupPath = null;
 let currentGroupItems = [];
@@ -96,7 +96,7 @@ function loadCfg() {
   catch (e) { return Object.assign({}, DEFAULT_CFG); }
 }
 let cfg = loadCfg();
-function saveCfg() { try { localStorage.setItem('galamart_cfg', JSON.stringify(cfg)); } catch (e) {} }
+function saveCfg() { try { localStorage.setItem('galamart_cfg', JSON.stringify(cfg)); } catch (e) { showStatus('❌ Настройки не сохранены: ' + e.message, 'error'); } }
 function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
 function getLogistics(c) {
   const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -128,7 +128,7 @@ function headerSig(s) { return String(s ?? '').toLowerCase().replace(/[^a-zа-я
 // ── Утилиты ──
 function showStatus(msg, type) { statusEl.textContent = msg; statusEl.className = `status ${type}`; }
 function updateBtn() {
-  const fileOk = fileInput.files.length && rawData.length > 0;
+  const fileOk = ['vision','sales','sku3','r29','director'].includes(currentMode) || (fileInput.files.length && rawData.length > 0);
   const needDate = currentMode === 'kлизма' || currentMode === 'sellto';
   const filterOk = needDate ? !!filterDateInput.value : true;
   processBtn.disabled = !(fileOk && filterOk);
@@ -137,32 +137,22 @@ function escapeHtml(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/<
 function truncateStr(s, n) { s = String(s ?? ''); return s.length > n ? s.slice(0, n-1) + '…' : s; }
 function num(v) {
   if (typeof v === 'number') return isFinite(v) ? v : 0;
-  const n = parseFloat(String(v ?? '').replace(/\s/g,'').replace('%','').replace(',','.'));
+  const n = Number(String(v ?? '').replace(/\s/g,'').replace('%','').replace(',','.'));
   return isFinite(n) ? n : 0;
 }
 function fmt(n, d = 0) { return (Math.round(n * 10**d) / 10**d).toLocaleString('ru-RU', { maximumFractionDigits: d }); }
 function fmtDays(d) { if (!isFinite(d)) return '∞'; if (d < 1) return '<1'; return String(Math.round(d)); }
 function splitTokens(v) { return String(v || '').split(/[\s,;]+/).map(s => s.trim().toLowerCase()).filter(Boolean); }
-function parseDate(val) {
-  if (!val) return null;
-  if (val instanceof Date) return isNaN(val.getTime()) ? null : val;
-  if (typeof val === 'number') {
-    const d = new Date(1899, 11, 30);
-    d.setDate(d.getDate() + val);
-    return isNaN(d.getTime()) ? null : d;
-  }
-  if (typeof val === 'string') {
-    let d = new Date(val);
-    if (isNaN(d.getTime())) {
-      const p = val.split(/[\.\/-]/);
-      if (p.length === 3) d = new Date(`${p[2]}-${p[1]}-${p[0]}`);
-    }
-    return isNaN(d.getTime()) ? null : d;
-  }
-  return null;
-}
+function parseDate(val) { return SoldieRules.date(val); }
 function fmtDate(val) { const d = parseDate(val); return d ? d.toLocaleDateString('ru-RU') : '—'; }
-function roundTo9(price) { const r = Math.floor((price - 9) / 10) * 10 + 9; return Math.max(1, r); }
+function roundTo9(price) { return SoldieRules.roundedPrice(price); }
+let reportDate = null;
+const REPORT_DAYS = 28;
+function analysisDate() { return reportDate || new Date(); }
+function ageDays(value) { return SoldieRules.daysBetween(value, analysisDate()); }
+function isSlowRow(r) { const age = ageDays(r['дата ввоза']); return age !== null && age >= 28 && SoldieRules.slow(num(r['склад кол']), num(r['продано (шт)'])); }
+function slowShare(r) { const sold = Math.max(0, num(r['продано (шт)'])), stock = num(r['склад кол']); return stock + sold > 0 ? sold / (stock + sold) * 100 : 0; }
+const SLOW_HINT = 'Оценка: продажи за 28 дней / (остаток + продажи) < 26,7%. Только товары с последней поставкой не менее 28 дней назад; без учёта других движений.';
 function genId(p) { return p + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
 
 // ── КУБЫ ──
@@ -171,9 +161,9 @@ const CUBE_LABEL_BY_KEY = { vneam: 'ВНЕ_АМ', zo: 'ЗО', zoset: 'ЗО се�
 function cubeKind(val) {
   const v = String(val ?? '').trim().toLowerCase();
   if (!v) return null;
-  if (v.includes('вне_ам')) return 'ВНЕ_АМ';
-  if (v === 'зо') return 'ЗО';
-  if (v === 'зо сеть') return 'ЗО сеть';
+  if (/вне[_\s-]*ам/.test(v)) return 'ВНЕ_АМ';
+  if (v.includes('зо') && /сеть|сет/.test(v)) return 'ЗО сеть';
+  if (v.includes('зо')) return 'ЗО';
   return null;
 }
 function cubeBadge(raw) {
@@ -188,18 +178,14 @@ function cubeBadge(raw) {
 function dailyRate(r) {
   const stock = num(r['склад кол']), od = num(r['остатки, дней']), sold = num(r['продано (шт)']);
   if (od > 0 && od < 9999 && stock > 0) return stock / od;
-  const imp = parseDate(r['дата ввоза']);
-  if (imp && sold > 0) {
-    const days = Math.max(1, Math.round((Date.now() - imp.getTime()) / 86400000));
-    return sold / days;
-  }
-  return 0;
+  if (od >= 9999) return 0;
+  return Math.max(0, sold) / REPORT_DAYS;
 }
 function stockDaysLeft(r) {
   const od = num(r['остатки, дней']), stock = num(r['склад кол']);
+  if (stock <= 0) return { days: 0 };
   if (od >= 9999) return { days: Infinity };
   if (od > 0) return { days: od };
-  if (stock <= 0) return { days: 0 };
   const rate = dailyRate(r);
   return rate > 0 ? { days: stock / rate, approx: true } : { days: Infinity };
 }
@@ -210,7 +196,7 @@ function isUnsoldDays(r) {
   if (!imp) return false;
   const sold = num(r['продано (шт)']);
   if (sold > 0) return false;
-  const daysSinceImport = Math.floor((Date.now() - imp.getTime()) / 86400000);
+  const daysSinceImport = ageDays(imp);
   return num(r['склад кол']) > 0 && daysSinceImport >= NO_SALES_DAYS;
 }
 function coverBadge(d) {
@@ -229,21 +215,24 @@ function rowGpMarkup(r) { const toss = num(r['то сс, руб']); return toss 
 
 // ── Агрегаторы ──
 function aggRows(rows) {
-  const a = { sku: 0, stock: 0, stockSum: 0, sold: 0, to: 0, toss: 0, rate: 0, deadSum: 0, deadCount: 0 };
+  const a = { sku: 0, stock: 0, stockSum: 0, sold: 0, to: 0, toss: 0, rate: 0, deadSum: 0, deadCount: 0, slowSum: 0, slowCount: 0, returns: 0 };
   rows.forEach(r => {
     a.sku++;
     const st = num(r['склад кол']); a.stock += st;
     const sSum = num(r['склад сумма, руб.']) || st * num(r['себ, руб.']);
     a.stockSum += sSum;
-    a.sold += num(r['продано (шт)']);
+    a.sold += Math.max(0, num(r['продано (шт)']));
+    a.returns += Math.max(0, -num(r['продано (шт)']));
     a.to += num(r['то, руб']); a.toss += num(r['то сс, руб']);
     a.rate += dailyRate(r);
     if (isUnsoldDays(r)) { a.deadCount++; a.deadSum += sSum; }
+    if (isSlowRow(r)) { a.slowCount++; a.slowSum += sSum; }
   });
   a.gp = a.to - a.toss;
   a.margin = a.to > 0 ? a.gp / a.to * 100 : 0;
   a.markup = a.toss > 0 ? a.gp / a.toss * 100 : 0;
   a.turnover = a.rate > 0 ? a.stock / a.rate : Infinity;
+  a.costTurnover = a.toss > 0 ? a.stockSum / (a.toss / REPORT_DAYS) : Infinity;
   return a;
 }
 function byGroupAgg(rows, key) {
@@ -257,7 +246,7 @@ function byGroupAgg(rows, key) {
 }
 function isDeadRow(r) { return isUnsoldDays(r); }
 function itemFrozen(r) { return num(r['склад сумма, руб.']) || num(r['склад кол']) * num(r['себ, руб.']); }
-function itemAgeDays(r) { const imp = parseDate(r['дата ввоза']); return imp ? Math.floor((Date.now() - imp.getTime()) / 86400000) : null; }
+function itemAgeDays(r) { const imp = parseDate(r['дата ввоза']); return imp ? ageDays(imp) : null; }
 function itemMarkup(r) { const c = num(r['себ, руб.']); if (c <= 0) return null; return (num(r['цена маг, руб.']) - c) / c * 100; }
 function scopeMarkupStock(scope) {
   let n = 0, d = 0;
@@ -267,6 +256,7 @@ function scopeMarkupStock(scope) {
 
 // ── Навигация ──
 function hideAllPages() {
+  document.getElementById('directorCard')?.classList.add('hidden');
   resultEl.classList.add('hidden');
   visionCard.classList.add('hidden');
   if (window.sku3Hide) window.sku3Hide();
@@ -326,8 +316,12 @@ document.addEventListener('click', e => {
 });
 
 // ── Загрузка отчёта ──
+let reportReadId = 0;
 fileInput.addEventListener('change', () => {
-  rawData = []; browseData = null; analogCache = null;
+  reportReadId++;
+  SuadelaExport.prices.clear();
+  if (typeof giftSelectedCodes !== 'undefined') giftSelectedCodes.clear();
+  rawData = []; codeIndex = new Map(); reportDate = null; browseData = null; analogCache = null;
   hideAllPages(); updateBtn();
 });
 
@@ -335,14 +329,18 @@ fileInput.addEventListener('change', (e) => {
   const file = e.target.files[0];
   if (!file) return;
   showStatus('Чтение структуры...', 'success');
+  const readId = reportReadId;
   const reader = new FileReader();
   reader.onload = (ev) => {
+    if (readId !== reportReadId) return;
     try {
       const wb   = XLSX.read(new Uint8Array(ev.target.result), { type: 'array', cellDates: true, defval: '' });
       const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '', range: 0 });
       if (rows.length < 4) throw new Error('Файл пуст или повреждён');
 
-      const rawHeaders = rows[2].map(h => String(h).trim().toLowerCase().replace(/\s+/g, ' '));
+      const headerRow = rows.findIndex(row => row.some(v => headerSig(v) === 'код') && row.some(v => headerSig(v) === 'товар'));
+      if (headerRow < 0) throw new Error('Не найдена шапка отчёта «Остатки по датам ввоза»');
+      const rawHeaders = rows[headerRow].map(h => String(h).trim().toLowerCase().replace(/\s+/g, ' '));
       const canonBySig = new Map(CANON_HEADERS.map(c => [headerSig(c), c]));
       const headerMap = {};
       rawHeaders.forEach((h, i) => {
@@ -354,25 +352,39 @@ fileInput.addEventListener('change', (e) => {
       const missing = REQUIRED_HEADERS.filter(r => !foundCanon.has(r));
       if (missing.length) throw new Error(`Не найдены колонки:\n${missing.join(', ')}\nПроверьте структуру файла.`);
 
-      rawData = rows.slice(3).map(r => {
+      const parsed = rows.slice(headerRow + 1).filter(r => String(r[rawHeaders.findIndex(h => headerSig(h) === 'код')] ?? '').trim()).map(r => {
         const obj = {};
         for (const [i, canon] of Object.entries(headerMap)) obj[canon] = r[i] ?? '';
         return obj;
       });
-      codeIndex = new Map();
-      rawData.forEach(r => {
-        const c = String(r['код'] ?? '').trim();
-        if (c && !codeIndex.has(c)) codeIndex.set(c, r);
+      const nextIndex = new Map();
+      parsed.forEach(r => {
+        const code = String(r['код']).trim();
+        if (nextIndex.has(code)) throw new Error('Повторный артикул в отчёте: ' + code);
+        for (const key of ['дата ввоза', 'дата переоценки', 'дата окончания продаж']) {
+          if (r[key] !== '' && r[key] != null && !parseDate(r[key])) throw new Error('Неверная дата: ' + code + ', ' + key);
+        }
+        nextIndex.set(code, r);
       });
+      const heading = rows.slice(0, headerRow).flat().join(' ');
+      const dateMatch = heading.match(/дата остатков:\s*(\d{1,2}\.\d{1,2}\.\d{4})/i);
+      if (!dateMatch || !parseDate(dateMatch[1])) throw new Error('В отчёте не найдена корректная дата остатков');
+      const period = heading.match(/период продаж:\s*с\s*(\d{1,2}\.\d{1,2}\.\d{4})\s*по\s*(\d{1,2}\.\d{1,2}\.\d{4})/i);
+      if (period && SoldieRules.daysBetween(period[1], period[2]) !== REPORT_DAYS - 1) throw new Error('Ожидается отчёт с продажами за 28 дней');
+      reportDate = parseDate(dateMatch[1]);
+      rawData = parsed;
+      codeIndex = nextIndex;
       hideAllPages();
       if (currentMode === 'dash') renderDashboard();
       else if (currentMode === 'zones') renderZones();
       else if (currentMode === 'analysis') renderAnalysis();
       else if (currentMode === 'gifts') renderGifts();
-      showStatus(`✅ Загружено: ${rawData.length.toLocaleString('ru-RU')} строк.`, 'success');
+      showStatus(`✅ Загружено: ${rawData.length.toLocaleString('ru-RU')} строк · остатки на ${fmtDate(reportDate)} · продажи за 28 дней.`, 'success');
       updateBtn();
-    } catch (err) { showStatus('❌ ' + err.message, 'error'); rawData = []; }
+      window.dispatchEvent(new CustomEvent('soldie-report-loaded', { detail: { rows:rawData, date:reportDate, file:file.name } }));
+    } catch (err) { showStatus('❌ ' + err.message, 'error'); rawData = []; codeIndex.clear(); reportDate = null; hideAllPages(); updateBtn(); }
   };
+  reader.onerror = () => showStatus('❌ Не удалось прочитать файл', 'error');
   reader.readAsArrayBuffer(file);
 });
 // ── Экспорт в Excel (универсальный) ──
