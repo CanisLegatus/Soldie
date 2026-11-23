@@ -1,0 +1,21 @@
+name: Publish Soldie release
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/publish-release.yml']
+
+jobs:
+  release:
+    if: github.repository == 'CanisLegatus/Soldie'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: v1.1.1
+        run: |
+          gh release create "$RELEASE_TAG" --target "$GITHUB_SHA" --title "Soldie $RELEASE_TAG" --notes 'Отчёт «К собранию» использует готовые месячные прогнозы по чекам из «План-факта» и рассчитывает проценты для всех пяти колонок сравнения по доступным данным.'
