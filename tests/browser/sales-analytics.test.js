@@ -207,6 +207,8 @@ const assert = require("node:assert/strict"),
     );
     assert.match(await page.$eval("#saView", (e) => e.textContent), /2 SKU/);
     await page.setViewport({ width: 390, height: 844 });
+    // Resizing from desktop also animates the sidebar closed over the menu button.
+    await page.waitForFunction(() => document.querySelector("#su-sidebar").getBoundingClientRect().right <= 0);
     await page.click("#su-menu");
     await page.waitForFunction(() => document.body.classList.contains("su-menu-open")
       && document.querySelector("#su-sidebar").getBoundingClientRect().left >= -1);
