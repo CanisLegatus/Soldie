@@ -10,6 +10,7 @@
     ['growthVP', 'ВП · прирост к 2025', '%'],
     ['markup', 'Наценка', '%'],
     ['checks', 'Количество чеков', 'шт.'],
+    ['fulChecks', 'Чеки · выполнение плана', '%'],
     ['progFulChecks', 'Чеки · прогноз выполнения плана', '%'],
     ['growthChecks', 'Чеки · прирост к 2025', '%'],
     ['avgCheck', 'Средний чек', '₽'],
@@ -18,11 +19,12 @@
   ];
   const scopes = ['Мы', 'Сеть', 'Регион', 'LFL'];
   const benchmarkInputs = {
-    progFul: ['progTO', 'planTO'], growthTO: ['to', 'to25'],
-    progFulVP: ['progVP', 'planVP'], growthVP: ['vp', 'vp25'], markup: ['vp', 'ss'],
+    growthTO: ['to', 'to25'], growthVP: ['vp', 'vp25'], markup: ['vp', 'ss'],
     growthChecks: ['checks', 'checks25'], avgCheck: ['to', 'checks'],
     growthAvgCheck: ['to', 'checks', 'to25', 'checks25'], avgPrice: ['to', 'qty']
   };
+  // Vision weights these ratios over stores that have both inputs.
+  const visionPlanRatios = new Set(['progFul', 'progFulVP', 'fulChecks']);
   const manualBlocks = ['ТОП-100', 'ПКЗ', '1SKU'];
   const colors = ['#1b518f', '#926322', '#117758', '#644785'];
   const storageKey = 'soldie.meeting.v1';
@@ -85,6 +87,7 @@
       const count = dayAverage(checks, date, 'fact');
       return {
         to: revenue, checks: count, avgCheck: ratio(revenue, count, 1000),
+        fulChecks: ratio(count, dayAverage(checks, date, 'plan'), 100),
         progFul: dayForecast(to, date), progFulChecks: dayForecast(checks, date)
       };
     });
@@ -98,9 +101,13 @@
     }
     const revenue = sum(values.map(row => row.to));
     const count = sum(values.map(row => row.checks));
+    const checksPlan = sum(range.dates.map(date => dayAverage(checks, date, 'plan')));
     return {
       values,
-      totals: { to: revenue, checks: count, avgCheck: ratio(revenue, count, 1000), progFul: periodForecast(to), progFulChecks: periodForecast(checks) }
+      totals: {
+        to: revenue, checks: count, avgCheck: ratio(revenue, count, 1000),
+        fulChecks: ratio(count, checksPlan, 100), progFul: periodForecast(to), progFulChecks: periodForecast(checks)
+      }
     };
   }
 
@@ -148,14 +155,15 @@
       const summary = complete ? (index === 0 ? rows[0] : VisionMeeting.aggregate(rows)) : null;
       if (summary && index > 0) {
         for (const [id] of measures) {
-          if (!rows.every(row => (benchmarkInputs[id] || [id]).every(input => valid(row[input])))) summary[id] = null;
+          if (!visionPlanRatios.has(id) && !rows.every(row => (benchmarkInputs[id] || [id]).every(input => valid(row[input])))) summary[id] = null;
         }
       }
       const daily = dailyGroup(members, source.plan, range);
       return { summary, daily };
     });
     const automatic = measures.map(([id]) => groups.map(({ summary, daily }, col) =>
-      summary?.[id] ?? daily.totals[id] ?? record.values?.[id]?.[col] ?? null));
+      summary?.[id] ?? (id === 'fulChecks' && col === 0 ? ratio(summary?.checks, summary?.planChecks, 100) : null)
+      ?? daily.totals[id] ?? record.values?.[id]?.[col] ?? null));
     const values = Object.fromEntries(measures.map(([id], row) => [id, automatic[row].map((v, col) => v ?? record.manual?.[id]?.[col] ?? null)]));
     const sku = skuSettings && (!name || !skuSettings.storeName || VisionMeeting.storeKey(skuSettings.storeName) === storeKey)
       ? window.sku3Api.computeMetrics() : null;
@@ -271,7 +279,7 @@
       </header>
       <div class="meeting-table-scroll"><table>
         <thead><tr><th scope="col">Показатель</th>${scopes.map(label => '<th scope="col">' + label + '</th>').join('')}</tr></thead>
-        <tbody>${measures.map(([id, title, unit]) => '<tr><th scope="row">' + title + ' <small>' + unit + '</small></th>'
+        <tbody>${measures.map(([id, title, unit]) => '<tr data-meeting-row="' + id + '"><th scope="row">' + title + ' <small>' + unit + '</small></th>'
           + view.values[id].map((value, col) => {
             const previous = view.previous?.[id]?.[col];
             const change = valid(previous) && valid(value) ? value - previous : null;
@@ -279,7 +287,7 @@
             return '<td>' + showValue(value) + delta + '</td>';
           }).join('') + '</tr>').join('')}</tbody>
       </table></div>
-      <p class="meeting-note">Абсолютные показатели для сети, региона и LFL приведены в среднем на магазин. Прогноз месяца относится к полному месячному плану. Для закрытых дней в прогнозе по «План-факту» используется факт.${view.previous ? ' Под значениями показано изменение к предыдущему периоду той же длины, если есть данные.' : ''}</p>
+      <p class="meeting-note">Абсолютные показатели для сети, региона и LFL приведены в среднем на магазин. Проценты выполнения и прогнозы из Vision учитывают магазины, по которым есть обе величины для расчёта. Прогноз месяца относится к полному месячному плану. Для закрытых дней в прогнозе по «План-факту» используется факт.${view.previous ? ' Под значениями показано изменение к предыдущему периоду той же длины, если есть данные.' : ''}</p>
       <section class="meeting-programs">
         <h3>Товары и акции</h3>
         <dl>${manualBlocks.map(block => {

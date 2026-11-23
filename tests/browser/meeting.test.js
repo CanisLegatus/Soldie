@@ -41,7 +41,7 @@ const puppeteer = require('puppeteer-core');
         const rows = stores.map(([name, region, lfl, id, to]) => {
           const row = [lfl, lfl, id, name, region, 'ФО', '01.01.2018'];
           Object.entries({ 12:to * 1.1, 14:to, 15:to / 1.2, 16:20, 20:to / 4, 22:to / 5, 23:to / 6, 24:20,
-            29:to * .8, 32:25, 33:to * 5, 36:to * 3, 38:to * 2, 39:to * 1.5, 40:33.33,
+            29:to * .8, 32:25, 33:to * 5, 36:to * 3, 37:66.67, 38:to * 2, 39:to * 1.5, 40:33.33,
             43:500, 44:450, 45:11.11, 46:200 }).forEach(([i, value]) => {
             row[i] = [12, 14, 15, 20, 22, 23, 29, 33, 36, 38, 39].includes(Number(i)) ? value * factor : value;
           });
@@ -65,6 +65,11 @@ const puppeteer = require('puppeteer-core');
         }
         XLSX.utils.book_append_sheet(plan, XLSX.utils.aoa_to_sheet(rows), sheetName);
       }
+      // Vision calculates network forecast ratios from stores with both forecasts and plans.
+      XLSX.utils.book_append_sheet(plan, XLSX.utils.aoa_to_sheet([
+        ['№', 'Магазин', 'ТО-прогноз, тыс', 'ТО-прогноз выполнения', 'ВП-прогноз, тыс', 'ВП-прогноз выполнения'],
+        [1, 'Наш магазин', 363, 110, 90, 120], [2, 'Другой', 88, 80, 20, 80]
+      ]), 'Рейтинг');
       vIngest(1, plan, 'plan.xlsx');
     });
     await page.click('[data-mode="meeting"]');
@@ -72,11 +77,15 @@ const puppeteer = require('puppeteer-core');
     assert.equal(await page.$eval('#meetingMode', el => el.value), 'month');
     assert.deepEqual(await page.$$eval('#meetingOutput table thead th', els => els.map(el => el.textContent)),
       ['Показатель', 'Мы', 'Сеть', 'Регион', 'LFL']);
-    const cell = (row, col) => page.$eval(`#meetingOutput tbody tr:nth-child(${row}) td:nth-of-type(${col})`, el => el.firstChild.textContent);
-    assert.equal(await cell(1, 1), '300');
-    assert.equal(await cell(1, 3), '200');
-    assert.equal(await cell(4, 1), '60');
-    assert.notEqual(await cell(9, 1), '—');
+    const cell = (row, col) => page.$eval(`#meetingOutput tr[data-meeting-row="${row}"] td:nth-of-type(${col})`, el => el.firstChild.textContent);
+    assert.equal(await cell('to', 1), '300');
+    assert.equal(await cell('to', 3), '200');
+    assert.equal(await cell('vp', 1), '60');
+    assert.equal(await cell('progFul', 2), '102,5');
+    assert.equal(await cell('progFulVP', 2), '110');
+    assert.equal(await cell('fulChecks', 1), '66,67');
+    assert.equal(await cell('fulChecks', 2), '66,67');
+    assert.notEqual(await cell('progFulChecks', 1), '66,67');
 
     await page.evaluate(() => {
       const state = sku3Api.getState();
@@ -93,9 +102,10 @@ const puppeteer = require('puppeteer-core');
     await page.select('#meetingMode', 'rolling');
     assert.equal(await page.$eval('#meetingDays', el => el.value), '7');
     assert.match(await page.$eval('#meetingOutput .meeting-heading', el => el.textContent), /16\.11\.2026 — 22\.11\.2026/);
-    assert.equal(await cell(1, 1), '399');
-    assert.equal(await cell(4, 1), '—');
-    assert.equal(await cell(11, 1), '500');
+    assert.equal(await cell('to', 1), '399');
+    assert.equal(await cell('vp', 1), '—');
+    assert.equal(await cell('avgCheck', 1), '500');
+    assert.equal(await cell('fulChecks', 1), '126,67');
     assert.match(await page.$eval('#meetingOutput tbody tr:first-child td small', el => el.textContent), /\+147/);
     assert.match(await page.$eval('.meeting-programs', el => el.textContent), /Подвесной ароматизатор · 5 шт\./);
     assert.ok(await page.$$eval('#meetingCharts canvas', els => els.length >= 4));
@@ -108,9 +118,9 @@ const puppeteer = require('puppeteer-core');
       input.dispatchEvent(new Event('change', { bubbles:true }));
     });
     await page.waitForFunction(() => document.getElementById('meetingStatus').textContent.includes('week.xlsx'));
-    assert.equal(await cell(4, 1), '12');
-    assert.equal(await cell(4, 4), '7,6');
-    assert.equal(await cell(6, 1), '20');
+    assert.equal(await cell('vp', 1), '12');
+    assert.equal(await cell('vp', 4), '7,6');
+    assert.equal(await cell('growthVP', 1), '20');
     await page.evaluate(() => {
       const input = document.getElementById('meetingPlan');
       const workbook = XLSX.utils.book_new();
@@ -124,7 +134,7 @@ const puppeteer = require('puppeteer-core');
       input.dispatchEvent(new Event('change', { bubbles:true }));
     });
     await page.waitForFunction(() => document.getElementById('meetingStatus').textContent.includes('weekly-plan.xlsx'));
-    assert.equal(await cell(5, 1), '109,09');
+    assert.equal(await cell('progFulVP', 1), '109,09');
     assert.ok(await page.$$eval('#meetingCharts canvas', els => els.length >= 4));
     await page.evaluate(() => {
       for (const [selector, value] of [
@@ -138,7 +148,7 @@ const puppeteer = require('puppeteer-core');
         input.dispatchEvent(new Event('change', { bubbles:true }));
       }
     });
-    assert.equal(await cell(13, 1), '104,5');
+    assert.equal(await cell('avgPrice', 1), '104,5');
     assert.match(await page.$eval('.meeting-programs', el => el.textContent), /Пополнить выкладку/);
     await page.evaluate(() => { window.print = () => { window.meetingPrinted = true; }; });
     await page.click('#meetingPrint');
@@ -156,9 +166,9 @@ const puppeteer = require('puppeteer-core');
     await page.click('[data-mode="meeting"]');
     await page.evaluate(() => sku3Api.ready);
     await page.select('#meetingMode', 'rolling');
-    assert.equal(await cell(4, 1), '12');
-    assert.equal(await cell(5, 1), '109,09');
-    assert.equal(await cell(13, 1), '104,5');
+    assert.equal(await cell('vp', 1), '12');
+    assert.equal(await cell('progFulVP', 1), '109,09');
+    assert.equal(await cell('avgPrice', 1), '104,5');
     const chooseEnd = value => page.evaluate(date => {
       const input = document.getElementById('meetingEnd');
       input.value = date;
@@ -173,14 +183,14 @@ const puppeteer = require('puppeteer-core');
     await page.click('#meetingSave');
     await chooseEnd('2026-11-22');
     assert.match(await page.$eval('#meetingCharts', el => el.textContent), /ВП · прогноз выполнения плана по сохранённым срезам/);
-    assert.match(await page.$eval('#meetingOutput tbody tr:nth-child(5) td small', el => el.textContent), /\+7,09 п\. п\./);
+    assert.match(await page.$eval('#meetingOutput tr[data-meeting-row="progFulVP"] td small', el => el.textContent), /\+7,09 п\. п\./);
     await page.evaluate(() => {
       const input = document.getElementById('meetingDays');
       input.value = '5';
       input.dispatchEvent(new Event('change', { bubbles:true }));
     });
     assert.match(await page.$eval('#meetingOutput .meeting-heading', el => el.textContent), /18\.11\.2026 — 22\.11\.2026/);
-    assert.equal(await cell(4, 1), '—');
+    assert.equal(await cell('vp', 1), '—');
     await page.click('[data-mode="vision"]');
     assert.equal(await page.$eval('#meetingCard', el => el.classList.contains('hidden')), true);
     assert.deepEqual(errors, []);
