@@ -136,6 +136,36 @@ async function run() {
     await page.goto(url + '#sku3');
     await page.waitForFunction(()=>location.hash==='#sku3'&&window.sku3Api&&!document.getElementById('sku3Card').classList.contains('hidden'));
     await page.evaluate(()=>sku3Api.ready);
+
+    await page.evaluate(() => {
+      const { settings } = sku3Api.getState();
+      settings.startDate = '2026-11-01';
+      settings.endDate = '2026-11-30';
+      settings.minPayout = 0;
+      settings.skus = [{ id:'test', name:'Акция', articles:['794-585'], planUnits:10, cashierRate:5, fundRate:0 }];
+    });
+    const reportDir = path.resolve(__dirname, '../../reports');
+    const importInput = await page.$('#importFileInput');
+    await importInput.uploadFile(path.join(reportDir, 'продажи-по-кассирам-c-артикулом.xlsx'));
+    await page.waitForFunction(() => !document.getElementById('confirmImportBtn').disabled);
+    assert.match(await page.$eval('#importBody', el => el.textContent), /794-585/);
+    await page.click('#confirmImportBtn');
+    await page.waitForFunction(() => sku3Api.getState().imports.some(row => row.date === '2026-11-22'));
+    const cashierSales = () => page.evaluate(() => sku3Api.getState().sales.filter(row => row.date === '2026-11-22'));
+    const sales = await cashierSales();
+    assert.deepEqual(sales.map(({ article, seller, qty, sum }) => [article, seller, qty, sum]), [
+      ['794-585', 'Караморина Анастасия Михайловна', 1, 99.9],
+      ['332-015', 'Клякина Марина Николаевна', 2, 998.1],
+    ]);
+    assert.match(sales[1].name, /, 67001$/);
+    assert.equal(await page.evaluate(() => sku3Api.computeMetrics().totals.payableTotal), 5);
+
+    await page.evaluate(() => sku3Api.closeModal('checksModal'));
+    await importInput.uploadFile(path.join(reportDir, 'продажи-по-кассирам.xlsx'));
+    await page.waitForFunction(() => document.getElementById('importBody').textContent.includes('нет артикулов'));
+    assert.equal(await page.$eval('#confirmImportBtn', el => el.disabled), true);
+    assert.deepEqual(await cashierSales(), sales);
+
     assert.deepEqual(errors,[]);assert.deepEqual(requests,[]);
     console.log('PASS: file://, stock/slow/dead, gifts, zones, markdown/export, 3SKU payouts, parser/replacement, IndexedDB reload, direct 3SKU entry');
   } finally { await browser.close(); }

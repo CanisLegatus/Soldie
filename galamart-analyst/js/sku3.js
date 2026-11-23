@@ -1598,6 +1598,60 @@ function findHeader(rows){
   return includeCandidate;
 }
 
+function findCashierReportHeader(rows){
+  for (let i = 0; i < Math.min(rows.length - 3, 120); i++) {
+    const cells = rows[i].map(cell => normalizeHeaderCell(cell).toLowerCase());
+    const labelCol = cells.indexOf('фирма');
+    const qtyCol = cells.indexOf('количество');
+    const sumCol = cells.indexOf('сумма (рег.вал.)');
+    if (labelCol < 0 || qtyCol < 0 || sumCol < 0) continue;
+
+    const [warehouse, seller, product] = rows.slice(i + 1, i + 4)
+      .map(row => normalizeHeaderCell(row[labelCol]).toLowerCase());
+    const hasArticle = /^номенклатура\s*,\s*артикул$/.test(product);
+    if (warehouse === 'склад' && seller === 'продавец' && (hasArticle || product === 'номенклатура')) {
+      return { rowIndex:i, labelCol, qtyCol, sumCol, detected:true, cashierReport:true, hasArticle };
+    }
+  }
+  return null;
+}
+
+function extractCashierRecords(rows, sheet, header, date){
+  if (!header.hasArticle) throw new Error('В отчёте «Продажи продавцов» нет артикулов. Добавьте «Артикул» к полю «Номенклатура» и выгрузите отчёт заново.');
+
+  const origin = XLSX.utils.decode_range(sheet['!ref']).s;
+  const readNumber = (row, col) => parseNumericCell(sheet[XLSX.utils.encode_cell({ r:origin.r + row, c:origin.c + col })]?.v);
+  const records = [];
+  let seller = '';
+  let hasNonzeroQuantity = false;
+
+  // Уровни Excel для группировок «Фирма», «Склад», «Продавец», «Номенклатура, Артикул».
+  for (let i = header.rowIndex + 4; i < rows.length; i++) {
+    const label = String(rows[i][header.labelCol] ?? '').trim();
+    const level = sheet['!rows']?.[origin.r + i]?.level ?? 0;
+    if (!label && level !== 2) continue;
+    const qty = readNumber(i, header.qtyCol);
+    if (qty) hasNonzeroQuantity = true;
+    if (level < 3) {
+      seller = level === 2 ? label : '';
+      continue;
+    }
+    if (level !== 3 || qty === 0) continue;
+
+    // В наименовании бывают запятые. Артикул выгружается после последней.
+    const match = label.match(/^(.+),\s*([\p{L}\p{N}][\p{L}\p{N}./-]*)$/su);
+    const sum = readNumber(i, header.sumCol);
+    if (!match || qty == null || sum == null) {
+      throw new Error('Строка ' + (origin.r + i + 1) + ': не удалось прочитать артикул, количество или сумму продажи.');
+    }
+    records.push({ date, seller, article:match[2], name:match[1].trim(), qty, sum });
+  }
+  if (hasNonzeroQuantity && !records.length) {
+    throw new Error('В отчёте есть ненулевые итоги, но нет товарных строк. Выгрузите отчёт с детализацией по номенклатуре и артикулам.');
+  }
+  return aggregateRecords(records);
+}
+
 function isHeaderOrTotalLabel(label){
   const l = String(label || '').trim().toLowerCase();
   if (!l) return true;
@@ -1732,14 +1786,14 @@ async function parseSalesFile(file){
 
   try {
     const buf = await file.arrayBuffer();
-    const wb = XLSX.read(buf, { type:'array' });
+    const wb = XLSX.read(buf, { type:'array', cellStyles:true });
     let chosen = null;
 
     for (const sheetName of wb.SheetNames) {
       const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header:1, raw:false, defval:'' });
       if (!rows.length) continue;
       const date = findReportDate(rows);
-      const header = findHeader(rows);
+      const header = findCashierReportHeader(rows) || findHeader(rows);
       if (header) { chosen = { rows, date, header, sheetName }; break; }
       if (date && (!chosen || !chosen.date)) chosen = { rows, date, header:null, sheetName };
       if (!chosen) chosen = { rows, date, header:null, sheetName };
@@ -1759,7 +1813,9 @@ async function parseSalesFile(file){
     result.header = header;
     result.date = chosen.date || '';
     result.dateDetected = Boolean(chosen.date);
-    result.records = extractRecords(chosen.rows, start, header, result.date);
+    result.records = header.cashierReport
+      ? extractCashierRecords(chosen.rows, wb.Sheets[chosen.sheetName], header, result.date)
+      : extractRecords(chosen.rows, start, header, result.date);
 
     if (!result.dateDetected) result.warnings.push('Дата в файле не найдена. Укажите дату вручную.');
     if (!result.records.length) result.warnings.push('В файле нет продаж. Если это корректный нулевой дневной отчёт, подтвердите импорт — день будет отмечен загруженным.');
@@ -2949,7 +3005,7 @@ function renderImportPreview(){
 
           <div class="stat-chips">
             ${p.header && p.header.detected ? chip('Заголовок: строка ' + (p.header.rowIndex + 1), 'success') : chip('Заголовок не найден — колонки по умолчанию', 'warning')}
-            ${p.header ? chip('Артикул: столбец ' + (p.header.labelCol + 1), 'neutral') : ''}
+            ${p.header ? chip((p.header.cashierReport ? 'Номенклатура и артикул: столбец ' : 'Артикул: столбец ') + (p.header.labelCol + 1), 'neutral') : ''}
             ${p.header ? chip('Количество: столбец ' + (p.header.qtyCol + 1), 'primary') : ''}
             ${p.header ? chip('Сумма: столбец ' + (p.header.sumCol + 1), 'info') : ''}
           </div>
