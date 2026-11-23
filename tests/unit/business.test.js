@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const R = require('../galamart-analyst/js/business.js');
+const R = require('../../galamart-analyst/js/business.js');
 test('Russian and ISO dates are strict, including leap days', () => {
   assert.equal(R.date('05.10.2026').getMonth(), 9);
   assert.equal(R.date('31.02.2026'), null);
@@ -46,7 +46,7 @@ test('15th remains current deadline at any hour, and missed klizma schedule is b
 });
 test('fund distribution preserves cents without negative remainder for many sellers', () => {
   const vm=require('node:vm'), fs=require('node:fs');
-  const source=fs.readFileSync(require.resolve('../galamart-analyst/js/sku3.js'),'utf8');
+  const source=fs.readFileSync(require.resolve('../../galamart-analyst/js/sku3.js'),'utf8');
   const context={};vm.createContext(context);
   vm.runInContext(source.slice(source.indexOf('function distributeFund('),source.indexOf('function computeMetrics()')),context);
   const entries=Array.from({length:100},()=>({units:1}));

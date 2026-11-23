@@ -323,7 +323,7 @@ if (window.__bootErrors?.length) {
   ).join('\n');
   const details = window.__bootErrors.map((error, index) => `#${index + 1}\n${error}`).join('\n\n');
   console.error('Подробная диагностика загрузки приложения:', { errors: window.__bootErrors, trace: window.__bootTrace });
-  showStatus(`❌ Не все файлы приложения загрузились.\n\nПОДРОБНОСТИ:\n${details}\n\nЖУРНАЛ ЗАПУСКА:\n${trace}\n\nСкопируйте весь текст этого сообщения и передайте разработчику. Проверьте, что архив распакован целиком и все папки lib/, js/ и vision/ находятся рядом с index.html.`, 'error');
+  showStatus(`❌ Не все файлы приложения загрузились.\n\nПОДРОБНОСТИ:\n${details}\n\nЖУРНАЛ ЗАПУСКА:\n${trace}\n\nСкопируйте весь текст этого сообщения и передайте разработчику. Проверьте, что архив распакован целиком и папки lib/ и js/ находятся рядом с index.html.`, 'error');
 }
 if (typeof XLSX === 'undefined') {
   showStatus('❌ Не найден файл lib/xlsx.full.min.js. Скачайте его с https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js и положите в папку lib/.', 'error');

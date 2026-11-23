@@ -9,8 +9,8 @@
     "puppeteer-core": "^25.16.0"
   },
   "scripts": {
-    "test": "node --test tests/*.test.js",
-    "test:browser": "node test_sales.js && node test_r29_live.js && node test_director_live.js && node test_shell_live.js && node test_sales_analytics_live.js",
+    "test": "node --test tests/unit/*.test.js",
+    "test:browser": "node --test --test-concurrency=1 tests/browser/*.test.js",
     "sync:android": "node scripts/sync-android.js"
   }
 }

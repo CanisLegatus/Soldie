@@ -29,7 +29,7 @@ const assert = require("node:assert/strict"),
       };
     });
     await page.goto(
-      pathToFileURL(path.resolve("galamart-analyst/index.html")).href,
+      pathToFileURL(path.resolve(__dirname, "../../galamart-analyst/index.html")).href,
     );
     await page.click('[data-mode="sales"]');
     await page.evaluate(() => sku3Api.ready);

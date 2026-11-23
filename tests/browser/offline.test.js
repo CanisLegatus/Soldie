@@ -17,7 +17,7 @@ async function run() {
         static now() { return new OriginalDate('2026-10-26T09:00:00+03:00').getTime(); }
       };
     });
-    const url = pathToFileURL(path.resolve(__dirname,'galamart-analyst/index.html')).href;
+    const url = pathToFileURL(path.resolve(__dirname,'../../galamart-analyst/index.html')).href;
     await page.goto(url);await page.click('[data-mode="dash"]');
     await page.evaluate(() => {
       const values = { 'код':'A-001','товар':'Медленный товар','группа 1':'Группа','группа 2':'Подгруппа','группа 3':'Тип','себ, руб.':10,'цена тн, руб':29.9,'цена маг, руб.':29.9,'наценка %':199,'склад кол':80,'склад сумма, руб.':800,'продано (шт)':20,'то сс, руб':200,'то, руб':598,'остатки, дней':112,'дата ввоза':'01.08.2026','дата окончания продаж':'30.10.2026','кубы':'ЗО вр' };
@@ -120,9 +120,9 @@ async function run() {
     await page.click('[data-mode="dash"]');
     assert.equal(await page.$eval('#dashCard',el=>getComputedStyle(el).fontSize),'16px');
     const fs = require('node:fs');
-    const sample = fs.readdirSync(path.join(__dirname,'galamart-analyst')).find(name=>name.endsWith('.xlsx') && name.startsWith('╨Ю'));
+    const sample = fs.readdirSync(path.join(__dirname,'../../galamart-analyst')).find(name=>name.endsWith('.xlsx') && name.startsWith('╨Ю'));
     if (sample) {
-      await (await page.$('#fileInput')).uploadFile(path.join(__dirname,'galamart-analyst',sample));
+      await (await page.$('#fileInput')).uploadFile(path.join(__dirname,'../../galamart-analyst',sample));
       await page.waitForFunction(()=>rawData.length>7000);
       assert.equal(await page.evaluate(()=>codeIndex.size),7400);
       for (const mode of ['analysis','top100','gifts','zones','browse','dash']) await page.click('[data-mode="'+mode+'"]');
@@ -132,11 +132,12 @@ async function run() {
       assert.doesNotMatch(await page.$eval('#directorCard',el=>el.textContent),/NaN/);
       console.log('PASS: реальный отчёт — 7400 артикулов, включая аналитику директора');
     }
-    await page.goto(pathToFileURL(path.resolve(__dirname,'suadela/suadela.html')).href);
-    await page.waitForFunction(()=>location.hash==='#sku3'&&!!window.sku3Api);
+    await page.goto('about:blank');
+    await page.goto(url + '#sku3');
+    await page.waitForFunction(()=>location.hash==='#sku3'&&window.sku3Api&&!document.getElementById('sku3Card').classList.contains('hidden'));
     await page.evaluate(()=>sku3Api.ready);
     assert.deepEqual(errors,[]);assert.deepEqual(requests,[]);
-    console.log('PASS: file://, stock/slow/dead, gifts, zones, markdown/export, 3SKU payouts, parser/replacement, IndexedDB reload, offline entry links');
+    console.log('PASS: file://, stock/slow/dead, gifts, zones, markdown/export, 3SKU payouts, parser/replacement, IndexedDB reload, direct 3SKU entry');
   } finally { await browser.close(); }
 }
 run().catch(error=>{console.error(error);process.exitCode=1;});

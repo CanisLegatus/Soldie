@@ -11,7 +11,7 @@ const fs = require('fs');
   page.on('console', (m) => { if (m.type() === 'error') errors.push('[console] ' + m.text()); });
   page.on('pageerror', (e) => errors.push('[pageerror] ' + e.message));
 
-  const url = 'file://' + path.resolve(__dirname, 'galamart-analyst/index.html');
+  const url = 'file://' + path.resolve(__dirname, '../../galamart-analyst/index.html');
   await page.goto(url, { waitUntil: 'domcontentloaded' });
   await page.evaluateHandle(() => document.fonts.ready);
   // ждём загрузки defer-скриптов

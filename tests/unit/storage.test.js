@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const fs = require('node:fs');
 const { indexedDB } = require('fake-indexeddb');
-const source = fs.readFileSync(require.resolve('../galamart-analyst/js/sku3.js'),'utf8');
+const source = fs.readFileSync(require.resolve('../../galamart-analyst/js/sku3.js'),'utf8');
 function store() {
   const data = new Map();
   const context = { window:{indexedDB}, indexedDB, localStorage:{getItem:k=>data.get(k)||null,setItem:(k,v)=>data.set(k,v)}, console:{error(){},warn(){}}, Map, Promise };

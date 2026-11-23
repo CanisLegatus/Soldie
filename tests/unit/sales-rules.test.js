@@ -1,6 +1,6 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const R = require("../galamart-analyst/js/sales-rules");
+const R = require("../../galamart-analyst/js/sales-rules");
 const catalog = new Map([
   [
     "A",

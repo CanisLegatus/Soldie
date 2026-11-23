@@ -1,6 +1,6 @@
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
-const R=require('../galamart-analyst/js/director-rules.js');
+const R=require('../../galamart-analyst/js/director-rules.js');
 function p(overrides={}){return R.product({'код':'A','товар':'Товар','группа 1':'Группа','группа 2':'Подгруппа','магазин':'Магазин','себ, руб.':10,'цена маг, руб.':20,'цена тн, руб':25,'склад кол':80,'склад сумма, руб.':800,'продано (шт)':20,'то, руб':400,'то сс, руб':200,'остатки, дней':112,'дата ввоза':'01.08.2026',...overrides});}
 function snapshot(date,products,store='Магазин'){return {date,products,store,savedAt:date+'T10:00:00Z'};}
 test('price control distinguishes direction, equality, missing values and threshold OR/AND',()=>{
