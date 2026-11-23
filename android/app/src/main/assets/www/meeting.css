@@ -28,15 +28,20 @@
 .meeting-heading { border-bottom: 2px solid #1b518f; margin-bottom: 12px; padding-bottom: 6px; }
 .meeting-heading h2 { font-size: 1.65rem; }
 .meeting-table-scroll { overflow-x: auto; }
-#meetingOutput table { border-collapse: collapse; width: 100%; min-width: 465px; font-variant-numeric: tabular-nums; }
+#meetingOutput table { border-collapse: collapse; width: 100%; min-width: 620px; font-variant-numeric: tabular-nums; }
 #meetingOutput th, #meetingOutput td { padding: 8px; border: 1px solid #ced9e3; font-size: .9rem; }
 #meetingOutput thead th { background: #e9f1f8; }
 #meetingOutput th[scope="row"] { font-weight: 600; }
-#meetingOutput th:first-child { text-align: left; }
+#meetingOutput th:first-child { text-align: left; width: 28%; }
 #meetingOutput td { text-align: right; }
 #meetingOutput td:nth-child(2) { background: #f3f7fc; font-weight: 700; }
 #meetingOutput th small { display: inline; white-space: nowrap; color: #435569; font-weight: normal; }
 #meetingOutput td small { display: block; white-space: nowrap; color: #435569; font-weight: normal; }
+.meeting-value { display: inline-flex; align-items: baseline; gap: 4px; white-space: nowrap; }
+.meeting-arrow { font-weight: 700; color: #435569; }
+.meeting-arrow[data-trend="up"] { color: #0b6850; }
+.meeting-arrow[data-trend="down"] { color: #9a3a32; }
+.meeting-cup { font-size: .87em; }
 .meeting-note { font-size: .8rem; color: #435569; }
 .meeting-programs { margin-top: 16px; }
 .meeting-programs dl { display: grid; grid-template-columns: max-content 1fr; gap: 7px 14px; }
@@ -61,6 +66,9 @@
   #meetingOutput .meeting-table-scroll { overflow: visible; }
   #meetingOutput table { min-width: 0; }
   #meetingOutput th, #meetingOutput td { color: #000; background: #fff; padding: 4px; font-size: 9pt; border-color: #888; }
+  .meeting-value { gap: 2px; }
+  #meetingOutput .meeting-arrow { color: #000; }
+  #meetingOutput .meeting-cup { filter: grayscale(1); }
   #meetingOutput thead { display: table-header-group; }
   #meetingOutput tr, .meeting-programs, .meeting-chart { break-inside: avoid; }
   .meeting-charts { display: block; column-count: 2; column-gap: 10px; }

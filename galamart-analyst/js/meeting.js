@@ -17,7 +17,7 @@
     ['growthAvgCheck', 'Средний чек · прирост к 2025', '%'],
     ['avgPrice', 'Средняя цена товара', '₽']
   ];
-  const scopes = ['Мы', 'Сеть', 'Регион', 'LFL'];
+  const scopes = ['Мы', 'Сеть', 'Регион', 'Моя LFL', 'Похожие'];
   const benchmarkInputs = {
     growthTO: ['to', 'to25'], growthVP: ['vp', 'vp25'], markup: ['vp', 'ss'],
     growthChecks: ['checks', 'checks25'], avgCheck: ['to', 'checks'],
@@ -26,7 +26,7 @@
   // Vision weights these ratios over stores that have both inputs.
   const visionPlanRatios = new Set(['progFul', 'progFulVP', 'fulChecks']);
   const manualBlocks = ['ТОП-100', 'ПКЗ', '1SKU'];
-  const colors = ['#1b518f', '#926322', '#117758', '#644785'];
+  const colors = ['#1b518f', '#926322', '#117758', '#644785', '#a13f57'];
   const storageKey = 'soldie.meeting.v1';
   const files = new Map();
   const charts = [];
@@ -144,7 +144,8 @@
       selected ? [selected] : name ? [{ name }] : [],
       source.stores,
       selected?.region ? source.stores.filter(row => row.region === selected.region) : [],
-      selected?.lfl2 ? source.stores.filter(row => row.lfl2 === selected.lfl2) : []
+      selected?.lfl2 ? source.stores.filter(row => row.lfl2 === selected.lfl2) : [],
+      VisionMeeting.similar(selected, source.stores)
     ];
     const statsByStore = new Map(source.stats.map(row => [VisionMeeting.storeKey(row.name), row]));
     const groups = comparable.map((members, index) => {
@@ -224,7 +225,7 @@
       type: 'line',
       data: { labels, datasets: usable.map((item, i) => ({
         ...item, borderColor: item.color || colors[i % colors.length], borderWidth: 2,
-        borderDash: [[], [7, 3], [2, 3], [8, 3, 2, 3]][i % 4], pointRadius: labels.length > 21 ? 0 : 2,
+        borderDash: [[], [7, 3], [2, 3], [8, 3, 2, 3], [5, 2, 1, 2]][i % colors.length], pointRadius: labels.length > 21 ? 0 : 2,
         spanGaps: false
       })) },
       options: { responsive: true, maintainAspectRatio: false, animation: false,
@@ -261,6 +262,26 @@
     }
   }
 
+  function comparisonCells(values, previous, unit) {
+    const available = values.filter(valid);
+    const leader = available.length > 1 ? showValue(Math.max(...available)) : null;
+    const ours = values[0];
+    return values.map((value, col) => {
+      const formatted = showValue(value);
+      let arrow = '';
+      if (col > 0 && valid(ours) && valid(value)) {
+        const [glyph, label, direction] = formatted === showValue(ours) ? ['→', 'Наравне с нами', 'level']
+          : value > ours ? ['↑', 'Выше нашего значения', 'up'] : ['↓', 'Ниже нашего значения', 'down'];
+        arrow = '<span class="meeting-arrow" data-trend="' + direction + '" role="img" aria-label="' + label + '" title="' + label + '">' + glyph + '</span>';
+      }
+      const cup = formatted === leader ? '<span class="meeting-cup" role="img" aria-label="Лидер строки" title="Лидер строки">🏆</span>' : '';
+      const before = previous?.[col];
+      const change = valid(before) && valid(value) ? value - before : null;
+      const delta = valid(change) ? '<small>' + (change > 0 ? '+' : '') + showValue(change) + ' ' + (unit === '%' ? 'п. п.' : unit) + '</small>' : '';
+      return '<td><span class="meeting-value">' + arrow + '<span class="meeting-number">' + formatted + '</span>' + cup + '</span>' + delta + '</td>';
+    }).join('');
+  }
+
   function renderOutput(view) {
     lastView = view;
     const skuSeries = (view.sku?.skuMetrics || []).map(sku => {
@@ -280,14 +301,10 @@
       <div class="meeting-table-scroll"><table>
         <thead><tr><th scope="col">Показатель</th>${scopes.map(label => '<th scope="col">' + label + '</th>').join('')}</tr></thead>
         <tbody>${measures.map(([id, title, unit]) => '<tr data-meeting-row="' + id + '"><th scope="row">' + title + ' <small>' + unit + '</small></th>'
-          + view.values[id].map((value, col) => {
-            const previous = view.previous?.[id]?.[col];
-            const change = valid(previous) && valid(value) ? value - previous : null;
-            const delta = valid(change) ? '<small>' + (change > 0 ? '+' : '') + showValue(change) + ' ' + (unit === '%' ? 'п. п.' : unit) + '</small>' : '';
-            return '<td>' + showValue(value) + delta + '</td>';
-          }).join('') + '</tr>').join('')}</tbody>
+          + comparisonCells(view.values[id], view.previous?.[id], unit) + '</tr>').join('')}</tbody>
       </table></div>
-      <p class="meeting-note">Абсолютные показатели для сети, региона и LFL приведены в среднем на магазин. Проценты выполнения и прогнозы из Vision учитывают магазины, по которым есть обе величины для расчёта. Прогноз месяца относится к полному месячному плану. Для закрытых дней в прогнозе по «План-факту» используется факт.${view.previous ? ' Под значениями показано изменение к предыдущему периоду той же длины, если есть данные.' : ''}</p>
+      <p class="meeting-note">↑ выше нашего значения · ↓ ниже · → наравне · 🏆 наибольшее значение в строке.</p>
+      <p class="meeting-note">Абсолютные показатели для групп приведены в среднем на магазин. Проценты выполнения и прогнозы из Vision учитывают магазины, по которым есть обе величины для расчёта. Прогноз месяца относится к полному месячному плану. Для закрытых дней в прогнозе по «План-факту» используется факт.${view.previous ? ' Под значениями показано изменение к предыдущему периоду той же длины, если есть данные.' : ''}</p>
       <section class="meeting-programs">
         <h3>Товары и акции</h3>
         <dl>${manualBlocks.map(block => {
@@ -387,7 +404,7 @@
     } else {
       const record = updateRecord(lastView);
       if (input.dataset.meetingMetric) {
-        const row = record.manual[input.dataset.meetingMetric] ||= [null, null, null, null];
+        const row = record.manual[input.dataset.meetingMetric] ||= scopes.map(() => null);
         row[input.dataset.col] = valid(input.valueAsNumber) ? input.valueAsNumber : null;
       } else if (input.dataset.block !== undefined) {
         const extra = record.extras[manualBlocks[input.dataset.block]] ||= {};

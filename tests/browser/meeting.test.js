@@ -40,7 +40,7 @@ const puppeteer = require('puppeteer-core');
         const stores = [['Наш магазин', 'Север', 'A', 1, 300], ['Другой', 'Север', 'B', 2, 100], ['Третий', 'Юг', 'A', 3, 80]];
         const rows = stores.map(([name, region, lfl, id, to]) => {
           const row = [lfl, lfl, id, name, region, 'ФО', '01.01.2018'];
-          Object.entries({ 12:to * 1.1, 14:to, 15:to / 1.2, 16:20, 20:to / 4, 22:to / 5, 23:to / 6, 24:20,
+          Object.entries({ 8:300, 12:to * 1.1, 14:to, 15:to / 1.2, 16:20, 20:to / 4, 22:to / 5, 23:to / 6, 24:20,
             29:to * .8, 32:25, 33:to * 5, 36:to * 3, 37:66.67, 38:to * 2, 39:to * 1.5, 40:33.33,
             43:500, 44:450, 45:11.11, 46:200 }).forEach(([i, value]) => {
             row[i] = [12, 14, 15, 20, 22, 23, 29, 33, 36, 38, 39].includes(Number(i)) ? value * factor : value;
@@ -76,10 +76,19 @@ const puppeteer = require('puppeteer-core');
     await page.evaluate(() => sku3Api.ready);
     assert.equal(await page.$eval('#meetingMode', el => el.value), 'month');
     assert.deepEqual(await page.$$eval('#meetingOutput table thead th', els => els.map(el => el.textContent)),
-      ['Показатель', 'Мы', 'Сеть', 'Регион', 'LFL']);
-    const cell = (row, col) => page.$eval(`#meetingOutput tr[data-meeting-row="${row}"] td:nth-of-type(${col})`, el => el.firstChild.textContent);
+      ['Показатель', 'Мы', 'Сеть', 'Регион', 'Моя LFL', 'Похожие']);
+    const cellSelector = (row, col) => `#meetingOutput tr[data-meeting-row="${row}"] td:nth-of-type(${col})`;
+    const cell = (row, col) => page.$eval(cellSelector(row, col) + ' .meeting-number', el => el.textContent);
+    const arrow = (row, col) => page.$eval(cellSelector(row, col) + ' .meeting-arrow', el => el.textContent);
     assert.equal(await cell('to', 1), '300');
     assert.equal(await cell('to', 3), '200');
+    assert.equal(await cell('to', 5), '80');
+    assert.equal(await arrow('to', 5), '↓');
+    assert.equal(await arrow('growthChecks', 5), '→');
+    assert.deepEqual(await page.$$eval('#meetingOutput tr[data-meeting-row="to"] td', cells =>
+      cells.map(cell => !!cell.querySelector('.meeting-cup'))), [true, false, false, false, false]);
+    assert.equal(await page.$$eval('#meetingOutput tr[data-meeting-row="growthChecks"] .meeting-cup', cups => cups.length), 5);
+    assert.equal(await page.$$eval(cellSelector('progFulVP', 5) + ' .meeting-arrow', arrows => arrows.length), 0);
     assert.equal(await cell('vp', 1), '60');
     assert.equal(await cell('progFul', 2), '102,5');
     assert.equal(await cell('progFulVP', 2), '110');
@@ -149,6 +158,7 @@ const puppeteer = require('puppeteer-core');
       }
     });
     assert.equal(await cell('avgPrice', 1), '104,5');
+    assert.equal(await arrow('avgPrice', 5), '↑');
     assert.match(await page.$eval('.meeting-programs', el => el.textContent), /Пополнить выкладку/);
     await page.evaluate(() => { window.print = () => { window.meetingPrinted = true; }; });
     await page.click('#meetingPrint');
@@ -158,6 +168,8 @@ const puppeteer = require('puppeteer-core');
     assert.equal(await page.$eval('#su-sidebar', el => getComputedStyle(el).display), 'none');
     assert.equal(await page.$eval('.meeting-controls', el => getComputedStyle(el).display), 'none');
     assert.notEqual(await page.$eval('#meetingCard', el => getComputedStyle(el).display), 'none');
+    assert.equal(await page.$$eval('#meetingOutput td .meeting-arrow', arrows => arrows.every(arrow =>
+      getComputedStyle(arrow).color === 'rgb(0, 0, 0)')), true);
     const pdf = await page.pdf({ preferCSSPageSize:true });
     assert.ok(pdf.length > 15000);
     await page.emulateMediaType('screen');

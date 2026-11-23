@@ -561,11 +561,11 @@ function aggregate(L){
   A.lflMoM=avg('lflMoM');
   return A;
 }
-function similar(st){
+function similar(st, stores=ST.stores){
   if(!st||!st.areaTrade){return [];}
   var i,cand=[],p=[];
-  for(i=0;i<ST.stores.length;i++){
-    var x=ST.stores[i];
+  for(i=0;i<stores.length;i++){
+    var x=stores[i];
     if(x.name!==st.name&&x.lfl2===st.lfl2&&x.areaTrade){cand.push(x);}
   }
   for(i=0;i<cand.length;i++){
@@ -614,6 +614,7 @@ function mergeMeetingSeries(previous, current){
 }
 
 window.VisionMeeting = {
+  similar: similar,
   selected: function(){return selS()?.name || '';},
   current: function(){return {stores:ST.stores, plan:F1};},
   readStats: parseStatsBlocks,
