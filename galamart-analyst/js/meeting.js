@@ -91,14 +91,32 @@
         progFul: dayForecast(to, date), progFulChecks: dayForecast(checks, date)
       };
     });
-    function periodForecast(series) {
-      const last = range.mode === 'month' ? range.monthEnd : range.end;
-      const dates = Array.from({ length: SoldieRules.daysBetween(range.start, last) + 1 }, (_, i) => shift(range.start, i));
-      if (!group.length) return null;
-      const forecast = series.flatMap(row => dates.map(date => forecastPoint(row, date)));
-      const target = series.flatMap(row => dates.map(date => point(row, date, 'plan')));
-      return ratio(sum(forecast), sum(target), 100);
+    const last = range.mode === 'month' ? range.monthEnd : range.end;
+    const forecastDates = Array.from({ length: SoldieRules.daysBetween(range.start, last) + 1 }, (_, i) => shift(range.start, i));
+    function forecastPair(row) {
+      return {
+        forecast: sum(forecastDates.map(date => forecastPoint(row, date))),
+        target: sum(forecastDates.map(date => point(row, date, 'plan')))
+      };
     }
+    function weightedForecast(pairs) {
+      return ratio(sum(pairs.map(pair => pair.forecast)), sum(pairs.map(pair => pair.target)), 100);
+    }
+    const month = range.start.slice(0, 7);
+    let explicitChecksRatio = null;
+    const checkPairs = checks.map((row, i) => {
+      if (range.mode === 'month') {
+        const key = VisionMeeting.storeKey(group[i].name);
+        const monthly = plan.monthlyChecks[key]?.monthly?.[month];
+        if (monthly) {
+          const target = monthly.plan ?? plan.checkTargets.get(key);
+          if (checks.length === 1) explicitChecksRatio = monthly.progFul ?? null;
+          const forecast = monthly.prog ?? (valid(monthly.progFul) && valid(target) ? target * monthly.progFul / 100 : null);
+          if (valid(forecast) && target > 0) return { forecast, target };
+        }
+      }
+      return forecastPair(row);
+    }).filter(({ forecast, target }) => valid(forecast) && target > 0);
     const revenue = sum(values.map(row => row.to));
     const count = sum(values.map(row => row.checks));
     const checksPlan = sum(range.dates.map(date => dayAverage(checks, date, 'plan')));
@@ -106,7 +124,8 @@
       values,
       totals: {
         to: revenue, checks: count, avgCheck: ratio(revenue, count, 1000),
-        fulChecks: ratio(count, checksPlan, 100), progFul: periodForecast(to), progFulChecks: periodForecast(checks)
+        fulChecks: ratio(count, checksPlan, 100), progFul: weightedForecast(to.map(forecastPair)),
+        progFulChecks: explicitChecksRatio ?? weightedForecast(checkPairs)
       }
     };
   }
@@ -124,9 +143,12 @@
       }
       return rows;
     };
+    const dailyChk = daily('dailyChk');
     const plan = {
       rating: local.plan?.rating || active.plan.rating,
-      dailyTO: daily('dailyTO'), dailyChk: daily('dailyChk')
+      dailyTO: daily('dailyTO'), dailyChk,
+      monthlyChecks: matchesMonth ? dailyChk : local.plan?.dailyChk || {},
+      checkTargets: new Map(stats.map(row => [VisionMeeting.storeKey(row.name), row.planChecks]))
     };
     return { stats, stores, plan, local, matchesMonth };
   }

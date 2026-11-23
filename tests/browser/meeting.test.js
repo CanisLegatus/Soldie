@@ -55,13 +55,16 @@ const puppeteer = require('puppeteer-core');
       vIngest(2, meetingStatsBook(1), 'month.xlsx');
       const dates = Array.from({ length:30 }, (_, i) => `${i+1}.11.26`);
       const plan = XLSX.utils.book_new();
-      for (const [sheetName, suffix, factor] of [['ТО План-Факт', '', 1], ['Чеки План-Факт', ' чеков', 2]]) {
+      for (const [sheetName, factor] of [['ТО План-Факт', 1], ['Чеки План-Факт', 2]]) {
         const rows = [['Магазин', '', '', '', 'План', ...dates]];
         for (const [name, scale] of [['Наш магазин', 3], ['Другой', 2], ['Третий', 1]]) {
           const fact = dates.map((_, i) => i < 22 ? (i + 1) * scale * factor : null);
-          rows.push([name, '', '', 'Факт' + suffix, '', ...fact],
-            [name, '', '', 'План' + suffix, '', ...dates.map(() => 15 * scale * factor)],
-            [name, '', '', 'Прогноз' + suffix, '', ...dates.map(() => 16 * scale * factor)]);
+          const isChecks = factor === 2;
+          rows.push([name, '', '', 'Факт', '', ...fact],
+            [name, '', '', 'План', isChecks ? 900 * scale : '', ...dates.map(() => 15 * scale * factor)]);
+          if (!isChecks) rows.push([name, '', '', 'Прогноз', '', ...dates.map(() => 16 * scale * factor)]);
+          else if (scale === 2) rows.push([name, '', '', 'Прогноз выполнения плана', '90%']);
+          else rows.push([name, '', '', 'Прогноз плана', scale === 3 ? 2970 : 945]);
         }
         XLSX.utils.book_append_sheet(plan, XLSX.utils.aoa_to_sheet(rows), sheetName);
       }
@@ -94,7 +97,8 @@ const puppeteer = require('puppeteer-core');
     assert.equal(await cell('progFulVP', 2), '110');
     assert.equal(await cell('fulChecks', 1), '66,67');
     assert.equal(await cell('fulChecks', 2), '66,67');
-    assert.notEqual(await cell('progFulChecks', 1), '66,67');
+    assert.deepEqual(await page.$$eval('#meetingOutput tr[data-meeting-row="progFulChecks"] .meeting-number',
+      cells => cells.map(cell => cell.textContent)), ['110', '102,5', '102', '108,75', '105']);
 
     await page.evaluate(() => {
       const state = sku3Api.getState();
@@ -115,6 +119,7 @@ const puppeteer = require('puppeteer-core');
     assert.equal(await cell('vp', 1), '—');
     assert.equal(await cell('avgCheck', 1), '500');
     assert.equal(await cell('fulChecks', 1), '126,67');
+    assert.equal(await cell('progFulChecks', 1), '126,67');
     assert.match(await page.$eval('#meetingOutput tbody tr:first-child td small', el => el.textContent), /\+147/);
     assert.match(await page.$eval('.meeting-programs', el => el.textContent), /Подвесной ароматизатор · 5 шт\./);
     assert.ok(await page.$$eval('#meetingCharts canvas', els => els.length >= 4));

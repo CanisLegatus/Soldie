@@ -365,7 +365,7 @@ function parseRatingRows(R,rating=F1.rating){
     }
   }
 }
-function parseWide(R,minDates=28){
+function parseWide(R,minDates=28,sheetName=''){
   var hdr=-1,dateIdx=[],i,x;
   for(i=0;i<R.length;i++){
     var r=R[i];
@@ -381,8 +381,12 @@ function parseWide(R,minDates=28){
   var dates=[];
   for(i=0;i<dateIdx.length;i++){dates.push(dlab(R[hdr][dateIdx[i]]));}
   var isoDates=dateIdx.map(function(col){return dailyDate(R[hdr][col]);});
-  var kind='to';
-  for(i=hdr+1;i<R.length&&i<hdr+4000;i++){
+  var month=isoDates.find(Boolean)?.slice(0,7);
+  var monthDays=month ? new Date(Number(month.slice(0,4)), Number(month.slice(5)), 0).getDate() : 0;
+  var monthDates=new Set(isoDates.filter(date => date?.startsWith(month+'-')));
+  if(monthDates.size!==monthDays || isoDates.some(date => date && !monthDates.has(date))) month=null;
+  var kind=/чек/i.test(sheetName) ? 'chk' : 'to';
+  for(i=hdr+1;kind==='to'&&i<R.length&&i<hdr+4000;i++){
     var rr=R[i];
     if(rr&&/чек/i.test(s(rr[3]))){kind='chk';break;}
   }
@@ -396,15 +400,19 @@ function parseWide(R,minDates=28){
     var key=null;
     if(mk.indexOf('коэфф')>=0){key='coef';}
     else if(mk.indexOf('корр')>=0){key='corr';}
-    else if(mk.indexOf('план')>=0){key='plan';}
-    else if(mk.indexOf('факт')>=0){key='fact';}
+    else if(mk.indexOf('прогноз')>=0&&mk.indexOf('выполн')>=0){key='progFul';}
     else if(mk.indexOf('прогноз')>=0){key='prog';}
     else if(mk.indexOf('выполн')>=0){key='ful';}
+    else if(mk.indexOf('факт')>=0){key='fact';}
+    else if(mk.indexOf('план')>=0){key='plan';}
     if(!key){continue;}
-    if(!stores[nm]){stores[nm]={dates:dates,isoDates:isoDates};}
+    if(!stores[nm]){stores[nm]={dates:dates,isoDates:isoDates,monthly:{}};}
     var daily=[];
     for(x=0;x<dateIdx.length;x++){daily.push(num(rw[dateIdx[x]]));}
     stores[nm][key]={m:num(rw[4]),d:daily};
+    if(month&&['plan','prog','progFul'].includes(key)&&stores[nm][key].m!=null){
+      (stores[nm].monthly[month]||={})[key]=stores[nm][key].m;
+    }
   }
   return {kind:kind,dates:dates,stores:stores};
 }
@@ -468,7 +476,7 @@ function parseFile1(wb){
         if(nd&&(!F1.net||nd.length>F1.net.length)){F1.net=nd;}
         continue;
       }
-      var w=parseWide(R);
+      var w=parseWide(R,28,sn);
       if(w){
         var target=(w.kind==='to')?F1.dailyTO:F1.dailyChk;
         var ks=Object.keys(w.stores),j;
@@ -606,7 +614,11 @@ function mergeMeetingSeries(previous, current){
   var oldIndex=new Map(previous.isoDates.map((day,i) => [day,i]));
   var newIndex=new Map(current.isoDates.map((day,i) => [day,i]));
   var isoDates=[...new Set([...oldIndex.keys(),...newIndex.keys()])].filter(Boolean).sort();
-  var result={isoDates};
+  var monthly={...previous.monthly};
+  for(var [month,values] of Object.entries(current.monthly||{})){
+    monthly[month]={...monthly[month],...values};
+  }
+  var result={isoDates,monthly};
   for(var kind of ['fact','plan','prog']){
     result[kind]={ d:isoDates.map(day => current[kind]?.d[newIndex.get(day)] ?? previous[kind]?.d[oldIndex.get(day)] ?? null) };
   }
@@ -623,7 +635,7 @@ window.VisionMeeting = {
     wb.SheetNames.forEach(function(name){
       if(/по тн|тноменклатур|сеть гм|партнер/i.test(name)) return;
       var rows=rowsOf(wb.Sheets[name]);
-      var wide=parseWide(rows,1);
+      var wide=parseWide(rows,1,name);
       if(wide){
         var target=wide.kind==='to' ? plan.dailyTO : plan.dailyChk;
         Object.entries(wide.stores).forEach(function(entry){
