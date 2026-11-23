@@ -16,6 +16,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: v1.1.1
+          RELEASE_TAG: v1.1.2
         run: |
-          gh release create "$RELEASE_TAG" --target "$GITHUB_SHA" --title "Soldie $RELEASE_TAG" --notes 'Отчёт «К собранию» использует готовые месячные прогнозы по чекам из «План-факта» и рассчитывает проценты для всех пяти колонок сравнения по доступным данным.'
+          gh release create "$RELEASE_TAG" --target "$GITHUB_SHA" --title "Soldie $RELEASE_TAG" --notes 'Импорт «План-Факта» читает план, факт и прогноз, когда название магазина указано один раз на весь блок. Прогноз чеков проверен во всех пяти колонках отчёта «К собранию» на исходных выгрузках за 22.11.2026.'

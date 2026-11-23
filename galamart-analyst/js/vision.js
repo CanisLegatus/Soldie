@@ -390,13 +390,15 @@ function parseWide(R,minDates=28,sheetName=''){
     var rr=R[i];
     if(rr&&/чек/i.test(s(rr[3]))){kind='chk';break;}
   }
-  var stores={};
+  var stores={},storeName='';
   for(i=hdr+1;i<R.length;i++){
     var rw=R[i];
     if(!rw){continue;}
     var nm=s(rw[0]).trim();
     var mk=s(rw[3]).trim().toLowerCase();
-    if(!nm||!mk||/итого/i.test(nm)){continue;}
+    // The store name spans the coefficient, plan, fact and forecast rows in the export.
+    if(nm){storeName=/итого/i.test(nm)?'':nm;}
+    if(!storeName||!mk){continue;}
     var key=null;
     if(mk.indexOf('коэфф')>=0){key='coef';}
     else if(mk.indexOf('корр')>=0){key='corr';}
@@ -406,12 +408,12 @@ function parseWide(R,minDates=28,sheetName=''){
     else if(mk.indexOf('факт')>=0){key='fact';}
     else if(mk.indexOf('план')>=0){key='plan';}
     if(!key){continue;}
-    if(!stores[nm]){stores[nm]={dates:dates,isoDates:isoDates,monthly:{}};}
+    if(!stores[storeName]){stores[storeName]={dates:dates,isoDates:isoDates,monthly:{}};}
     var daily=[];
     for(x=0;x<dateIdx.length;x++){daily.push(num(rw[dateIdx[x]]));}
-    stores[nm][key]={m:num(rw[4]),d:daily};
-    if(month&&['plan','prog','progFul'].includes(key)&&stores[nm][key].m!=null){
-      (stores[nm].monthly[month]||={})[key]=stores[nm][key].m;
+    stores[storeName][key]={m:num(rw[4]),d:daily};
+    if(month&&['plan','prog','progFul'].includes(key)&&stores[storeName][key].m!=null){
+      (stores[storeName].monthly[month]||={})[key]=stores[storeName][key].m;
     }
   }
   return {kind:kind,dates:dates,stores:stores};
