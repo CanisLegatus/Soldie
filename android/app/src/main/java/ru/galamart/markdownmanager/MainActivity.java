@@ -168,13 +168,23 @@ public final class MainActivity extends Activity {
 
         @JavascriptInterface
         public void printMeetingReport() {
+            printReport("Отчёт к собранию", false);
+        }
+
+        @JavascriptInterface
+        public void printDailyBriefing() {
+            printReport("Ежедневный брифинг", true);
+        }
+
+        private void printReport(String title, boolean usePageMargins) {
             runOnUiThread(() -> {
                 if (webView == null || isFinishing()) return;
                 PrintManager manager = getSystemService(PrintManager.class);
                 if (manager == null) return;
-                String title = "Отчёт к собранию";
-                manager.print(title, webView.createPrintDocumentAdapter(title),
-                        new PrintAttributes.Builder().setMediaSize(PrintAttributes.MediaSize.ISO_A4).build());
+                PrintAttributes.Builder attributes = new PrintAttributes.Builder()
+                        .setMediaSize(PrintAttributes.MediaSize.ISO_A4);
+                if (usePageMargins) attributes.setMinMargins(PrintAttributes.Margins.NO_MARGINS);
+                manager.print(title, webView.createPrintDocumentAdapter(title), attributes.build());
             });
         }
     }

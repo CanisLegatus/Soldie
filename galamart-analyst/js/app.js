@@ -154,6 +154,12 @@ segBtns.forEach(btn => {
       updateBtn();
       return;
     }
+    if (currentMode === 'briefing') {
+      initializeSku3();
+      window.DailyBriefing?.show();
+      updateBtn();
+      return;
+    }
     if (currentMode === 'meeting') {
       initializeSku3();
       window.MeetingReport?.show();
@@ -338,6 +344,6 @@ updateBtn();
 
 // Standalone entry links open their corresponding section in the shared application.
 const entryMode = location.hash.slice(1);
-if (['r29', 'sku3', 'sales', 'vision', 'director', 'meeting'].includes(entryMode)) switchMode(entryMode);
+if (['r29', 'sku3', 'sales', 'vision', 'director', 'meeting', 'briefing'].includes(entryMode)) switchMode(entryMode);
 
 if (currentMode === "vision") { hideAllPages(); visionCard.classList.remove("hidden"); }

@@ -1512,6 +1512,7 @@ function computeMetrics(){
     startDate, endDate, allDates, today, importedSet, expectedDates, missingDates, daysWithData,
     elapsedDays, remainingDays, totalDays: allDates.length, checksMissingDates,
     skuMetrics, sellers, totals, dailySeries, byDate, storeChecks, unmappedCount, unmappedQty,
+    storeChecksByDate: Object.fromEntries([...checksByDate].map(([day, checks]) => [day, checks.explicit ?? checks.sellers])),
     minPayout, maxDailySellerUnits
   };
 }
@@ -1813,6 +1814,9 @@ async function parseSalesFile(file){
     result.header = header;
     result.date = chosen.date || '';
     result.dateDetected = Boolean(chosen.date);
+    const storeLabel = chosen.rows.slice(0, 12).flat()
+      .map(cell => String(cell).match(/Склад\s+Равно\s+"([^"]+)"/i)).find(Boolean);
+    result.reportStore = storeLabel?.[1] || '';
     result.records = header.cashierReport
       ? extractCashierRecords(chosen.rows, wb.Sheets[chosen.sheetName], header, result.date)
       : extractRecords(chosen.rows, start, header, result.date);
@@ -3058,7 +3062,7 @@ async function confirmImport(){
   pendingImports.forEach(p => {
     if (p.error || !SoldieRules.date(p.date) || (!p.records.length && !p.header?.detected)) return;
     // One report is a complete snapshot of a day; the last selected file replaces earlier copies.
-    groups.set(p.date, { date:p.date, records:[], files:[], newSellers:new Set() });
+    groups.set(p.date, { date:p.date, records:[], files:[], newSellers:new Set(), reportStore:p.reportStore });
     const g = groups.get(p.date);
     g.records.push(...p.records);
     g.files.push(p.fileName);
@@ -3071,8 +3075,10 @@ async function confirmImport(){
     state.sales = state.sales.filter(r => r.date !== g.date);
     state.imports = state.imports.filter(i => i.date !== g.date);
     const records = aggregateRecords(g.records.map(r => Object.assign({}, r, { date:g.date })));
+    const storeName = g.reportStore || (/^магазин$/i.test(state.settings.storeName) ? '' : state.settings.storeName);
     state.sales.push(...records);
-    state.imports.push({ date:g.date, file:g.files.join(', '), at:new Date().toISOString(), count:records.length });
+    state.imports.push({ date:g.date, file:g.files.join(', '), at:new Date().toISOString(), count:records.length,
+      storeName });
     /* «Горячие» данные: чанк дня перезаписывается целиком (одна запись при persist) */
     s3store.replaceDay(g.date, records);
     dirtyDates.add(/^\d{4}-\d{2}-\d{2}$/.test(String(g.date || '')) ? g.date : '__nodate__');

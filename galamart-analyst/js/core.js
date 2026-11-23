@@ -258,6 +258,7 @@ function scopeMarkupStock(scope) {
 function hideAllPages() {
   document.getElementById('directorCard')?.classList.add('hidden');
   window.MeetingReport?.hide();
+  window.DailyBriefing?.hide();
   resultEl.classList.add('hidden');
   visionCard.classList.add('hidden');
   if (window.sku3Hide) window.sku3Hide();

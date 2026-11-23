@@ -432,7 +432,9 @@
         if (kind === 'stats' ? !data.length : !Object.values(data).some(group => Object.keys(group).length)) {
           throw new Error('Не найдены данные нужного вида');
         }
-        files.set(key, { ...files.get(key), [kind]: data, [kind + 'Name']: file.name });
+        const metadata = VisionMeeting.briefingMetadata(workbook, kind, file.name);
+        files.set(key, { ...files.get(key), [kind]: data, [kind + 'Name']: file.name, [kind + 'Source']: metadata });
+        window.dispatchEvent(new Event('briefing-sources-changed'));
         if (!store && kind === 'stats' && !VisionMeeting.selected() && key === period().key) store = data[0].name;
         message = 'Загружен файл ' + file.name;
       } catch (error) { message = 'Ошибка чтения файла. ' + error.message; }
@@ -464,6 +466,7 @@
   });
 
   window.MeetingReport = {
+    briefingSources: () => [...files.values()],
     show() {
       card.classList.remove('hidden');
       document.body.classList.add('meeting-report-active');

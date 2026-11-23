@@ -355,7 +355,7 @@ function findColSub(r,cands){
   return -1;
 }
 const ratingBases={
-  monthRevenue:'то-факт, тыс', priorMonthRevenue:'то прошлый мес., тыс',
+  monthRevenue:'то-факт, тыс', monthProfit:'вп-факт, тыс', priorMonthRevenue:'то прошлый мес., тыс',
   lflRevenue:'текущий месяц lfl', priorLflRevenue:'прошлый месяц lfl'
 };
 function parseRatingBlock(R,h,iMag,map,rating){
@@ -447,7 +447,8 @@ function parseWide(R,minDates=28,sheetName=''){
     else if(mk.indexOf('факт')>=0){key='fact';}
     else if(mk.indexOf('план')>=0){key='plan';}
     if(!key){continue;}
-    if(!stores[storeName]){stores[storeName]={dates:dates,isoDates:isoDates,monthly:{}};}
+    if(!stores[storeName]){stores[storeName]={dates:dates,isoDates:isoDates,monthly:{},name:storeName,region:''};}
+    if(nm && norm(R[hdr][1])==='регион') stores[storeName].region=s(rw[1]).trim();
     var daily=[];
     for(x=0;x<dateIdx.length;x++){daily.push(num(rw[dateIdx[x]]));}
     stores[storeName][key]={m:num(rw[4]),d:daily};
@@ -465,6 +466,7 @@ function parseTN(R,tn){
     if(rowHasCell(r,'ГруппаНоменклатуры1')){hdr=i;break;}
   }
   if(hdr<0){return;}
+  const planCol=R[hdr].findIndex(cell => /^(?:то[- ]план|план (?:то|выручки)).*тыс/.test(norm(cell)));
   for(i=hdr+1;i<R.length;i++){
     var rr=R[i];
     if(!rr){continue;}
@@ -475,7 +477,7 @@ function parseTN(R,tn){
     var key=norm(nm);
     if(!tn[key]){tn[key]=[];}
     tn[key].push({
-      g:grp.replace(/\s*\[.*\]/,''),
+      g:grp.replace(/\s*\[.*\]/,''), code:grp.match(/\[([^\]]+)\]/)?.[1], plan:num(rr[planCol]),
       ss:num(rr[2]),rev:num(rr[3]),vp:num(rr[4]),mark:num(rr[5]),qty:num(rr[6])
     });
   }
@@ -518,7 +520,7 @@ function parseFile1(wb){
         if(nd&&(!data.net||nd.length>data.net.length)){data.net=nd;}
         continue;
       }
-      var w=parseWide(R,28,sn);
+      var w=parseWide(R,/план[\s-]*факт/i.test(sn)?1:28,sn);
       if(w){
         var target=(w.kind==='to')?data.dailyTO:data.dailyChk;
         var ks=Object.keys(w.stores),j;
@@ -663,24 +665,70 @@ function mergeMeetingSeries(previous, current){
   for(var [month,values] of Object.entries(current.monthly||{})){
     monthly[month]={...monthly[month],...values};
   }
-  var result={isoDates,monthly};
+  var result={isoDates,monthly,name:current.name||previous.name,region:current.region||previous.region};
   for(var kind of ['fact','plan','prog']){
     result[kind]={ d:isoDates.map(day => current[kind]?.d[newIndex.get(day)] ?? previous[kind]?.d[oldIndex.get(day)] ?? null) };
   }
   return result;
 }
 
+// The daily sheets have one total per store and date. Conflicting duplicate totals
+// are unusable and must never be added together.
+function briefingDaily(wb, kind, period) {
+  const name=wb.SheetNames.find(name => norm(name)===(kind==='stats'?'по дням':'продажи'));
+  const daily=Object.create(null);
+  if(!name) return daily;
+  const rows=rowsOf(wb.Sheets[name]);
+  const header=rows.findIndex(row => norm(row[0])==='магазин' && /^(дата|день)$/.test(norm(row[1])));
+  if(header<0) return daily;
+  const columns=rows[header];
+  const to=findColSub(columns, kind==='stats'?['то, тыс']:['выручка, тыс']);
+  const cost=findColSub(columns, kind==='stats'?['то сс, тыс']:['себестоимость, тыс']);
+  const checks=findColSub(columns,['кол. чеков','кол-во чеков']);
+  const profit=columns.findIndex(cell => /^вп,\s*тыс/.test(norm(cell)));
+  const profitPlan=columns.findIndex(cell => /^(?:вп[- ]план|план вп).*тыс/.test(norm(cell)));
+  let store='';
+  for(const row of rows.slice(header+1)){
+    if(row[0]) store=summaryName(s(row[0]).trim())?'':norm(row[0]);
+    if(!store) continue;
+    let day=dailyDate(row[1]);
+    if(!day && kind==='stats' && period && period.start.slice(0,7)===period.end.slice(0,7)){
+      const n=num(row[1]);
+      if(Number.isInteger(n) && n>=1 && n<=31) day=period.start.slice(0,7)+'-'+String(n).padStart(2,'0');
+    }
+    if(!day || day<period?.start || day>period?.end) continue;
+    const record={to:num(row[to]),cost:num(row[cost]),checks:num(row[checks]),vp:num(row[profit]),planVP:num(row[profitPlan])};
+    if(record.vp===null && record.to!==null && record.cost!==null) record.vp=record.to-record.cost;
+    if(!Object.values(record).some(Number.isFinite)) continue;
+    const days=daily[store]??=Object.create(null);
+    if(!Object.hasOwn(days,day)) days[day]=record;
+    else if(JSON.stringify(days[day])!==JSON.stringify(record)) days[day]=null;
+  }
+  return daily;
+}
+
+function briefingMetadata(wb,kind,name){
+  const period=workbookPeriod(wb);
+  const sheet=wb.Sheets[wb.SheetNames[0]];
+  const header=XLSX.utils.sheet_to_json(sheet,{header:1,range:'A1:L4'}).flat().filter(value => typeof value==='string');
+  const timed=header.map(line => line.match(/(?:сформирован(?:о)?|время выгрузки|актуально на)[:\s]+(\d{2}\.\d{2}\.\d{4})\s+(?:в\s+)?([01]\d|2[0-3]):([0-5]\d)/i)).find(Boolean);
+  return {name,period,importedAt:new Date().toISOString(),daily:briefingDaily(wb,kind,period),
+    time:timed && dailyDate(timed[1])===period?.end ? timed[2]+':'+timed[3] : null};
+}
+
 window.VisionMeeting = {
   similar: similar,
   selected: function(){return selS()?.name || '';},
-  current: function(){return {stores:ST.stores, statsPeriod:ST.period, plan:F1};},
+  current: function(){return {stores:ST.stores, statsPeriod:ST.period, plan:F1, statsSource:ST.source, planSource:F1.source};},
+  briefingMetadata: briefingMetadata,
   readStats: parseStatsBlocks,
   workbookPeriod: workbookPeriod,
   readPlan: function(wb){
-    var plan={rating:{},dailyTO:{},dailyChk:{}};
+    var plan={rating:{},dailyTO:{},dailyChk:{},tn:{}};
     wb.SheetNames.forEach(function(name){
-      if(/по тн|тноменклатур|сеть гм|партнер/i.test(name)) return;
+      if(/сеть гм|партнер/i.test(name)) return;
       var rows=rowsOf(wb.Sheets[name]);
+      if(/по тн|тноменклатур/i.test(name)){parseTN(rows,plan.tn);return;}
       var wide=parseWide(rows,1,name);
       if(wide){
         var target=wide.kind==='to' ? plan.dailyTO : plan.dailyChk;
@@ -807,7 +855,8 @@ window.vIngest=function(w,wb,fname){
       stat('В файле 2 не найдены магазины',true);
       return;
     }
-    ST.period=workbookPeriod(wb);
+    ST.source=briefingMetadata(wb,'stats',fname);
+    ST.period=ST.source.period;
     ST.stores=stores;
     ST.byNorm={};
     for(i=0;i<stores.length;i++){ST.byNorm[norm(stores[i].name)]=stores[i];}
@@ -826,12 +875,14 @@ window.vIngest=function(w,wb,fname){
     stat('Файл 2 обработан: '+stores.length+' магазинов'+(F1.loaded?' · файл 1 подключён':''));
   }else{
     F1=parseFile1(wb);
+    F1.source=briefingMetadata(wb,'plan',fname);
     mergeRating();
     if(ST.stores.length){buildTNIndex();refresh();}
     setChip(1,true,'План-факт: ТО у '+cnt(F1.dailyTO)+', чеки у '+cnt(F1.dailyChk)+', ТН у '+cnt(F1.tn));
     setDrop(1,'done','✓ Дневная динамика: ТО '+cnt(F1.dailyTO)+' маг., чеки '+cnt(F1.dailyChk)+' маг. · ТН у '+cnt(F1.tn)+' маг.');
     stat('Файл 1 обработан: дневная динамика, прогнозы и ассортимент подключены');
   }
+  window.dispatchEvent(new Event('briefing-sources-changed'));
 };
 
 function cbox(id,h){
