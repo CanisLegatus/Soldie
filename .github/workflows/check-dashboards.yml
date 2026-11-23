@@ -1,0 +1,19 @@
+name: Check dashboards
+on: [pull_request, workflow_call]
+permissions:
+  contents: read
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run test:browser
+        env:
+          CHROME_BIN: /usr/bin/google-chrome
+      - run: npm run sync:android && git diff --exit-code -- android/app/src/main/assets/www

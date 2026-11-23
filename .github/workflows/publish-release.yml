@@ -6,7 +6,10 @@ on:
     paths: ['.github/workflows/publish-release.yml']
 
 jobs:
+  tests:
+    uses: ./.github/workflows/check-dashboards.yml
   release:
+    needs: tests
     if: github.repository == 'CanisLegatus/Soldie'
     runs-on: ubuntu-latest
     permissions:
@@ -16,6 +19,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: v1.1.2
+          RELEASE_TAG: v1.1.3
         run: |
-          gh release create "$RELEASE_TAG" --target "$GITHUB_SHA" --title "Soldie $RELEASE_TAG" --notes 'Импорт «План-Факта» читает план, факт и прогноз, когда название магазина указано один раз на весь блок. Прогноз чеков проверен во всех пяти колонках отчёта «К собранию» на исходных выгрузках за 22.11.2026.'
+          gh release create "$RELEASE_TAG" --target "$GITHUB_SHA" --title "Soldie $RELEASE_TAG" --notes 'Исправлены состав групп, точность импорта Excel и расчёты Vision. Перед выпуском месячный и недельный отчёты сверяются с исходными выгрузками.'

@@ -208,6 +208,9 @@ const assert = require("node:assert/strict"),
     assert.match(await page.$eval("#saView", (e) => e.textContent), /2 SKU/);
     await page.setViewport({ width: 390, height: 844 });
     await page.click("#su-menu");
+    await page.waitForFunction(() => document.body.classList.contains("su-menu-open")
+      && document.querySelector("#su-sidebar").getBoundingClientRect().left >= -1);
+    await page.$eval('[data-mode="sales"]', button => button.scrollIntoView({ block: "center" }));
     await page.click('[data-mode="sales"]');
     await new Promise((r) => setTimeout(r, 250));
     await page.screenshot({

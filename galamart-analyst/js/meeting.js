@@ -134,7 +134,9 @@
     const active = VisionMeeting.current();
     const local = files.get(range.key) || {};
     const matchesMonth = range.mode === 'month' && range.end === monthDefault;
-    const stats = local.stats || (matchesMonth ? active.stores : []);
+    const matches = filePeriod => filePeriod ? filePeriod.start === range.start && filePeriod.end === range.end : matchesMonth;
+    const ratingMatches = matches(active.plan.period);
+    const stats = local.stats || (matches(active.statsPeriod) ? active.stores : []);
     const stores = local.stats || active.stores;
     const daily = kind => {
       const rows = { ...active.plan[kind] };
@@ -147,10 +149,10 @@
     const plan = {
       rating: local.plan?.rating || active.plan.rating,
       dailyTO: daily('dailyTO'), dailyChk,
-      monthlyChecks: matchesMonth ? dailyChk : local.plan?.dailyChk || {},
+      monthlyChecks: ratingMatches ? dailyChk : local.plan?.dailyChk || {},
       checkTargets: new Map(stats.map(row => [VisionMeeting.storeKey(row.name), row.planChecks]))
     };
-    return { stats, stores, plan, local, matchesMonth };
+    return { stats, stores, plan, local, ratingMatches };
   }
 
   function buildView() {
@@ -172,8 +174,8 @@
     const statsByStore = new Map(source.stats.map(row => [VisionMeeting.storeKey(row.name), row]));
     const groups = comparable.map((members, index) => {
       const stats = members.map(row => statsByStore.get(VisionMeeting.storeKey(row.name))).filter(Boolean);
-      const rows = stats.map(row => ({ ...row, progTO: null, progFul: null, progVP: null, progFulVP: null,
-        ...(source.local.plan || source.matchesMonth ? source.plan.rating[VisionMeeting.storeKey(row.name)] : {}) }));
+      const rows = stats.map(row => ({ ...row, progTO: null, progFul: null, progVP: null, progFulVP: null, forecastPlanTO: null, forecastPlanVP: null,
+        ...(source.local.plan || source.ratingMatches ? source.plan.rating[VisionMeeting.storeKey(row.name)] : {}) }));
       const complete = rows.length === members.length;
       const summary = complete ? (index === 0 ? rows[0] : VisionMeeting.aggregate(rows)) : null;
       if (summary && index > 0) {
@@ -313,6 +315,11 @@
     const covered = view.range.dates.filter(date => view.sku?.importedSet.has(date)).length;
     const showSkuPlan = view.range.mode === 'month' && view.sku?.startDate === view.range.start
       && view.sku.endDate === view.range.monthEnd;
+    const statsChecks = view.groups[0].summary?.checks;
+    const dailyChecks = view.groups[0].daily.totals.checks;
+    const checksNote = valid(statsChecks) && valid(dailyChecks) && statsChecks !== dailyChecks
+      ? '<p class="meeting-note">Чеки магазина за выбранный период расходятся в выгрузках. В строке «Количество чеков» использована «Статистика расширенная» (' + showValue(statsChecks)
+        + ' шт.). В «Чеки План-Факт» за те же дни ' + showValue(dailyChecks) + ' шт.</p>' : '';
     const interval = fmtDate(view.range.start) + ' — ' + fmtDate(view.range.end);
     const missing = Object.values(view.values).flat().filter(v => !valid(v)).length;
     card.querySelector('#meetingMissingCount').textContent = missing ? 'Заполнить недостающие показатели (' + missing + ')' : 'Данные заполнены';
@@ -327,6 +334,7 @@
       </table></div>
       <p class="meeting-note">↑ выше нашего значения · ↓ ниже · → наравне · 🏆 наибольшее значение в строке.</p>
       <p class="meeting-note">Абсолютные показатели для групп приведены в среднем на магазин. Проценты выполнения и прогнозы из Vision учитывают магазины, по которым есть обе величины для расчёта. Прогноз месяца относится к полному месячному плану. Для закрытых дней в прогнозе по «План-факту» используется факт.${view.previous ? ' Под значениями показано изменение к предыдущему периоду той же длины, если есть данные.' : ''}</p>
+      ${checksNote}
       <section class="meeting-programs">
         <h3>Товары и акции</h3>
         <dl>${manualBlocks.map(block => {
@@ -411,10 +419,15 @@
     } else if (input.id === 'meetingStats' || input.id === 'meetingPlan') {
       const file = input.files[0];
       if (!file) return;
-      const key = period().key;
+      const range = period();
+      const key = range.key;
       const kind = input.id === 'meetingStats' ? 'stats' : 'plan';
       try {
         const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+        const filePeriod = VisionMeeting.workbookPeriod(workbook);
+        if (filePeriod && (filePeriod.start !== range.start || filePeriod.end !== range.end)) {
+          throw new Error('Период выгрузки ' + fmtDate(filePeriod.start) + ' — ' + fmtDate(filePeriod.end) + ' отличается от выбранного.');
+        }
         const data = kind === 'stats' ? VisionMeeting.readStats(workbook) : VisionMeeting.readPlan(workbook);
         if (kind === 'stats' ? !data.length : !Object.values(data).some(group => Object.keys(group).length)) {
           throw new Error('Не найдены данные нужного вида');

@@ -96,8 +96,9 @@ function num(v){
   if(typeof v==='number'){return isFinite(v)?v:null;}
   var t=String(v).replace(/\s/g,'').replace(/%/g,'');
   if(!t||t==='-'){return null;}
-  t=t.replace(/,/g,'');
-  var n=parseFloat(t);
+  if(t.includes(',') && !t.includes('.')) t=t.replace(',', '.');
+  else if (/^[+-]?\d{1,3}(,\d{3})+\.\d+$/.test(t)) t=t.replace(/,/g,'');
+  var n=Number(t);
   return isFinite(n)?n:null;
 }
 function isDateLike(c){
@@ -127,14 +128,29 @@ function fmtM(v){
 }
 function norm(q){return String(q||'').toLowerCase().replace(/ё/g,'е').replace(/\s+/g,' ').trim();}
 function cnt(o){var n=0,k;for(k in o){if(Object.prototype.hasOwnProperty.call(o,k)){n++;}}return n;}
-function rowsOf(ws){return XLSX.utils.sheet_to_json(ws,{header:1,raw:false,defval:null});}
+function rowsOf(ws){
+  var rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
+  if(!rows.length) return rows;
+  var origin=XLSX.utils.decode_range(ws['!ref']).s;
+  rows.forEach(function(row,i){
+    row.forEach(function(value,j){
+      if(typeof value!=='number' && !(value instanceof Date)) return;
+      var cell=ws[XLSX.utils.encode_cell({r:origin.r+i,c:origin.c+j})];
+      var label=cell.w ?? XLSX.utils.format_cell(cell);
+      if(value instanceof Date || isDateLike(label)) row[j]=label;
+      else if(label.includes('%')) row[j]=value*100;
+    });
+  });
+  return rows;
+}
+function summaryName(name){return /^(?:итого|среднее)(?:$|[\s:(])/iu.test(name);}
 function stat(msg,isErr){
   var el=$('statusline');
   if(el){el.textContent=msg;el.style.color=isErr?'#D92D20':'#667085';}
 }
 function selS(){return ST.byNorm[ST.sel]||null;}
 function turnOf(st){
-  if(st&&st.ss>0&&st.days){return st.stock/(st.ss/st.days);}
+  if(st&&Number.isFinite(st.stock)&&st.ss>0&&st.days>0){return st.stock/(st.ss/st.days);}
   return null;
 }
 
@@ -244,6 +260,11 @@ function emptyStore(nm,lfl,lfl2,region,fo,open){
     stock:null,sku:null,skuPerM2:null,fillTotal:null,fillTrade:null
   };
 }
+function workbookPeriod(wb){
+  var title=s(wb.Sheets[wb.SheetNames[0]]?.A1?.v);
+  var match=title.match(/за\s+(\d{2}\.\d{2}\.\d{4})\s*[-–—]\s*(\d{2}\.\d{2}\.\d{4})/i);
+  return match ? {start:dailyDate(match[1]),end:dailyDate(match[2])} : null;
+}
 function parseStatsBlocks(wb){
   var names=wb.SheetNames;
   var target=null,i;
@@ -269,6 +290,16 @@ function parseStatsBlocks(wb){
     }
     if(iMag<0){idx=h+1;continue;}
     var b=iMag-3;
+    // These exports use positional blocks. Stop if a known metric has moved.
+    var columns=hasDate
+      ? [[12,'план то,'],[14,'то, тыс'],[22,'вп, тыс'],[29,'то сс,'],[36,'план кол. чеков'],[38,'кол. чеков 20'],[43,'сред. чек,'],[46,'ср. цена 1 товара']]
+      : [[9,'то, тыс'],[11,'вп, тыс'],[14,'то сс,'],[17,'кол. чеков 20']];
+    for(const [offset,label] of columns){
+      const found=row.findIndex(cell => norm(cell).startsWith(label));
+      if(found>=0 && found!==b+offset){
+        throw new Error('Изменился порядок колонок статистики: '+row[found]);
+      }
+    }
     var j;
     for(j=h+1;j<R.length;j++){
       var r=R[j];
@@ -277,7 +308,7 @@ function parseStatsBlocks(wb){
       var nm=s(r[b+3]).trim();
       var nu=num(r[b+2]);
       if(!nm||nu==null){continue;}
-      if(/итого|среднее/i.test(nm)){continue;}
+      if(summaryName(nm)){continue;}
       var rec=emptyStore(nm,s(r[b]).trim(),s(r[b+1]).trim(),s(r[b+4]).trim(),s(r[b+5]).trim(),hasDate?s(r[b+6]).trim():'');
       if(hasDate){
         rec.areaTotal=num(r[b+7]);rec.areaTrade=num(r[b+8]);rec.areaTrade25=num(r[b+9]);
@@ -323,17 +354,25 @@ function findColSub(r,cands){
   }
   return -1;
 }
+const ratingBases={
+  monthRevenue:'то-факт, тыс', priorMonthRevenue:'то прошлый мес., тыс',
+  lflRevenue:'текущий месяц lfl', priorLflRevenue:'прошлый месяц lfl'
+};
 function parseRatingBlock(R,h,iMag,map,rating){
+  const bases=Object.entries(ratingBases).map(([key,header]) => [key,findColSub(R[h],[header])]);
   for(var i=h+1;i<R.length;i++){
     var r=R[i];
     if(!r){break;}
     var nm=s(r[iMag]).trim();
     if(!nm){break;}
-    if(/итого/i.test(nm)){continue;}
-    if(num(r[0])==null){break;}
+    if(summaryName(nm)){continue;}
+    if(num(r[0])==null && !(map.storeCount>=0 && num(r[map.storeCount])!=null)){break;}
     var key=norm(nm);
     if(!rating[key]){rating[key]={};}
     var o=rating[key];
+    for(const [field,col] of bases){if(col>=0) o[field]=num(r[col]);}
+    if(map.planTO>=0){o.forecastPlanTO=num(r[map.planTO]);}
+    if(map.planVP>=0){o.forecastPlanVP=num(r[map.planVP]);}
     if(map.progTO>=0){o.progTO=num(r[map.progTO]);}
     if(map.progFul>=0){o.progFul=num(r[map.progFul]);}
     if(map.growthMoM>=0){o.growthMoM=num(r[map.growthMoM]);}
@@ -356,12 +395,12 @@ function parseRatingRows(R,rating=F1.rating){
     if(aTO>=0&&bTO>=0){
       var cTO=findColSub(r,['то-прирост к прошл']);
       var dTO=findColSub(r,['lfl прирост','то-lfl']);
-      parseRatingBlock(R,i,iMag,{progTO:aTO,progFul:bTO,growthMoM:cTO,lflMoM:dTO,progVP:-1,progFulVP:-1},rating);
+      parseRatingBlock(R,i,iMag,{storeCount:findColSub(r,['к-во гм']),planTO:findColSub(r,['то-план, тыс']),progTO:aTO,progFul:bTO,growthMoM:cTO,lflMoM:dTO,progVP:-1,progFulVP:-1},rating);
     }
     var aVP=findColSub(r,['вп-прогноз, тыс']);
     var bVP=findColSub(r,['вп-прогноз выполнения']);
     if(aVP>=0&&bVP>=0){
-      parseRatingBlock(R,i,iMag,{progTO:-1,progFul:-1,growthMoM:-1,lflMoM:-1,progVP:aVP,progFulVP:bVP},rating);
+      parseRatingBlock(R,i,iMag,{storeCount:findColSub(r,['к-во гм']),planVP:findColSub(r,['вп-план, тыс']),progTO:-1,progFul:-1,growthMoM:-1,lflMoM:-1,progVP:aVP,progFulVP:bVP},rating);
     }
   }
 }
@@ -397,7 +436,7 @@ function parseWide(R,minDates=28,sheetName=''){
     var nm=s(rw[0]).trim();
     var mk=s(rw[3]).trim().toLowerCase();
     // The store name spans the coefficient, plan, fact and forecast rows in the export.
-    if(nm){storeName=/итого/i.test(nm)?'':nm;}
+    if(nm){storeName=summaryName(nm)?'':nm;}
     if(!storeName||!mk){continue;}
     var key=null;
     if(mk.indexOf('коэфф')>=0){key='coef';}
@@ -418,7 +457,7 @@ function parseWide(R,minDates=28,sheetName=''){
   }
   return {kind:kind,dates:dates,stores:stores};
 }
-function parseTN(R){
+function parseTN(R,tn){
   var hdr=-1,i;
   for(i=0;i<R.length;i++){
     var r=R[i];
@@ -432,10 +471,10 @@ function parseTN(R){
     var nm=s(rr[0]).trim();
     var grp=s(rr[1]).trim();
     if(!nm||!grp){continue;}
-    if(/итого/i.test(nm)){continue;}
+    if(summaryName(nm)){continue;}
     var key=norm(nm);
-    if(!F1.tn[key]){F1.tn[key]=[];}
-    F1.tn[key].push({
+    if(!tn[key]){tn[key]=[];}
+    tn[key].push({
       g:grp.replace(/\s*\[.*\]/,''),
       ss:num(rr[2]),rev:num(rr[3]),vp:num(rr[4]),mark:num(rr[5]),qty:num(rr[6])
     });
@@ -467,43 +506,40 @@ function parseNetDaily(R){
   return out.length?out:null;
 }
 function parseFile1(wb){
+  var data={rating:{},dailyTO:{},dailyChk:{},net:null,tn:{},period:workbookPeriod(wb)};
   var i;
   for(i=0;i<wb.SheetNames.length;i++){
     var sn=wb.SheetNames[i];
     try{
       var R=rowsOf(wb.Sheets[sn]);
-      if(/по тн|тноменклатур/i.test(sn)){parseTN(R);continue;}
+      if(/по тн|тноменклатур/i.test(sn)){parseTN(R,data.tn);continue;}
       if(/сеть гм|партнер/i.test(sn)){
         var nd=parseNetDaily(R);
-        if(nd&&(!F1.net||nd.length>F1.net.length)){F1.net=nd;}
+        if(nd&&(!data.net||nd.length>data.net.length)){data.net=nd;}
         continue;
       }
       var w=parseWide(R,28,sn);
       if(w){
-        var target=(w.kind==='to')?F1.dailyTO:F1.dailyChk;
+        var target=(w.kind==='to')?data.dailyTO:data.dailyChk;
         var ks=Object.keys(w.stores),j;
         for(j=0;j<ks.length;j++){target[norm(ks[j])]=w.stores[ks[j]];}
         continue;
       }
-      parseRatingRows(R);
+      parseRatingRows(R,data.rating);
     }catch(e){
       if(window.console){window.console.warn('skip sheet',sn,e);}
     }
   }
-  F1.loaded=true;
+  if(!data.net && ![data.rating,data.dailyTO,data.dailyChk,data.tn].some(group => Object.keys(group).length)){
+    throw new Error('В рейтинге не найдены показатели или строки магазинов');
+  }
+  data.loaded=true;
+  return data;
 }
 
 function aggregate(L){
   if(!L||!L.length){return null;}
   var n=L.length,q;
-  function S(k){
-    var a=0,i;
-    for(i=0;i<L.length;i++){
-      var v=L[i][k];
-      if(typeof v==='number'&&isFinite(v)){a+=v;}
-    }
-    return a;
-  }
   function avg(k){
     var vs=[],i;
     for(i=0;i<L.length;i++){
@@ -515,60 +551,67 @@ function aggregate(L){
     for(i=0;i<vs.length;i++){a+=vs[i];}
     return a/vs.length;
   }
-  function ratio(numerator, denominator, multiplier) {
-    var rows=L.filter(function(x){return typeof x[numerator]==='number' && isFinite(x[numerator]) && typeof x[denominator]==='number' && isFinite(x[denominator]);});
-    var a=0,b=0; rows.forEach(function(x){a+=x[numerator];b+=x[denominator];});
+  function ratio(numerator, denominator, multiplier, fallback) {
+    function base(x){return x[denominator] ?? x[fallback];}
+    var rows=L.filter(function(x){return typeof x[numerator]==='number' && isFinite(x[numerator]) && Number.isFinite(base(x));});
+    var a=0,b=0; rows.forEach(function(x){a+=x[numerator];b+=base(x);});
     return rows.length && b ? a/b*multiplier : null;
   }
-  var to=S('to'),to25=S('to25'),vp=S('vp'),vp25=S('vp25'),ss=S('ss'),ss25=S('ss25');
-  var qty=S('qty'),qty25=S('qty25'),ch=S('checks'),ch25=S('checks25');
-  var pTO=S('planTO'),pVP=S('planVP'),pCH=S('planChecks');
-  var aT=S('areaTotal'),aTr=S('areaTrade'),aTr25=S('areaTrade25');
-  var stock=S('stock'),sku=S('sku');
-  var days=avg('days')||30;
+  function growth(current, prior){
+    return Number.isFinite(current) && prior>0 ? (current/prior-1)*100 : null;
+  }
+  function groupGrowth(currentKey, priorKey){
+    return growth(ratio(currentKey,priorKey,1),1);
+  }
+  var days=avg('days');
   var A={n:n};
   ['planTO','to','to25','vp','vp25','ss','ss25','qty','qty25','checks','checks25','planVP','planChecks','areaTotal','areaTrade','areaTrade25','stock','sku'].forEach(function(k){A[k]=avg(k);}); A.days=days;
   A.fulTO=ratio('to','planTO',100);
   A.fulVP=ratio('vp','planVP',100);
   A.fulChecks=ratio('checks','planChecks',100);
-  A.growthTO=to25?(to/to25-1)*100:null;
-  A.growthVP=vp25?(vp/vp25-1)*100:null;
-  A.growthSS=ss25?(ss/ss25-1)*100:null;
-  A.growthQty=qty25?(qty/qty25-1)*100:null;
-  A.growthChecks=ch25?(ch/ch25-1)*100:null;
+  A.growthTO=groupGrowth('to','to25');
+  A.growthVP=groupGrowth('vp','vp25');
+  A.growthSS=groupGrowth('ss','ss25');
+  A.growthQty=groupGrowth('qty','qty25');
+  A.growthChecks=groupGrowth('checks','checks25');
   A.shareVP=ratio('vp','to',100);
   A.markup=ratio('vp','ss',100);
   A.avgCheck=ratio('to','checks',1000);
   A.avgCheck25=ratio('to25','checks25',1000);
-  A.growthAvgCheck=(A.avgCheck&&A.avgCheck25)?(A.avgCheck/A.avgCheck25-1)*100:null;
+  A.growthAvgCheck=growth(A.avgCheck,A.avgCheck25);
   A.avgPrice=ratio('to','qty',1000);
   A.avgPrice25=ratio('to25','qty25',1000);
-  A.growthAvgPrice=(A.avgPrice&&A.avgPrice25)?(A.avgPrice/A.avgPrice25-1)*100:null;
-  A.vpPerCheck=ch?vp*1000/ch:null;
-  A.vpPerCheck25=ch25?vp25*1000/ch25:null;
-  A.growthVPCheck=(A.vpPerCheck&&A.vpPerCheck25)?(A.vpPerCheck/A.vpPerCheck25-1)*100:null;
-  A.qtyPerCheck=ch?qty/ch:null;
-  A.qtyPerCheck25=ch25?qty25/ch25:null;
-  A.growthQtyCheck=(A.qtyPerCheck&&A.qtyPerCheck25)?(A.qtyPerCheck/A.qtyPerCheck25-1)*100:null;
-  A.toPerM2=aTr?to*1000/aTr/days:null;
-  var days25=avg('days25')||days;
-  A.toPerM225=aTr25?to25*1000/aTr25/days25:null;
-  A.growthTOM2=(A.toPerM2&&A.toPerM225)?(A.toPerM2/A.toPerM225-1)*100:null;
-  A.vpPerM2=aTr?vp*1000/aTr/days:null;
-  A.vpPerM225=aTr25?vp25*1000/aTr25/days25:null;
-  A.growthVPM2=(A.vpPerM2&&A.vpPerM225)?(A.vpPerM2/A.vpPerM225-1)*100:null;
-  A.skuPerM2=aTr?sku/aTr:null;
-  A.fillTrade=aTr?stock/aTr:null;
-  A.fillTotal=aT?stock/aT:null;
-  A.turnDays=(ss>0&&days>0)?stock/(ss/days):null;
-  A.planAvgCheck=pCH?pTO*1000/pCH:null;
-  A.fulAvgCheck=A.planAvgCheck>0?A.avgCheck/A.planAvgCheck*100:null;
+  A.growthAvgPrice=growth(A.avgPrice,A.avgPrice25);
+  A.vpPerCheck=ratio('vp','checks',1000);
+  A.vpPerCheck25=ratio('vp25','checks25',1000);
+  A.growthVPCheck=growth(A.vpPerCheck,A.vpPerCheck25);
+  A.qtyPerCheck=ratio('qty','checks',1);
+  A.qtyPerCheck25=ratio('qty25','checks25',1);
+  A.growthQtyCheck=growth(A.qtyPerCheck,A.qtyPerCheck25);
+  function perArea(key,area,days){
+    var amount=ratio(key,area,1000);
+    return amount!=null && days>0 ? amount/days : null;
+  }
+  A.toPerM2=perArea('to','areaTrade',days);
+  var priorDays=L.map(row => row.days25).filter(value => value>0);
+  var days25=priorDays.length ? priorDays.reduce((a,b) => a+b,0)/priorDays.length : null;
+  A.toPerM225=perArea('to25','areaTrade25',days25);
+  A.growthTOM2=growth(A.toPerM2,A.toPerM225);
+  A.vpPerM2=perArea('vp','areaTrade',days);
+  A.vpPerM225=perArea('vp25','areaTrade25',days25);
+  A.growthVPM2=growth(A.vpPerM2,A.vpPerM225);
+  A.skuPerM2=avg('skuPerM2');
+  A.fillTrade=avg('fillTrade');
+  A.fillTotal=avg('fillTotal');
+  A.turnDays=days>0 ? ratio('stock','ss',days) : null;
+  A.planAvgCheck=ratio('planTO','planChecks',1000);
+  A.fulAvgCheck=A.avgCheck!=null && A.planAvgCheck>0?A.avgCheck/A.planAvgCheck*100:null;
   A.progTO=avg('progTO');
-  A.progFul=ratio('progTO','planTO',100);
+  A.progFul=ratio('progTO','forecastPlanTO',100,'planTO');
   A.progVP=avg('progVP');
-  A.progFulVP=ratio('progVP','planVP',100);
-  A.growthMoM=avg('growthMoM');
-  A.lflMoM=avg('lflMoM');
+  A.progFulVP=ratio('progVP','forecastPlanVP',100,'planVP');
+  A.growthMoM=groupGrowth('monthRevenue','priorMonthRevenue') ?? avg('growthMoM');
+  A.lflMoM=groupGrowth('lflRevenue','priorLflRevenue') ?? avg('lflMoM');
   return A;
 }
 function similar(st, stores=ST.stores){
@@ -630,8 +673,9 @@ function mergeMeetingSeries(previous, current){
 window.VisionMeeting = {
   similar: similar,
   selected: function(){return selS()?.name || '';},
-  current: function(){return {stores:ST.stores, plan:F1};},
+  current: function(){return {stores:ST.stores, statsPeriod:ST.period, plan:F1};},
   readStats: parseStatsBlocks,
+  workbookPeriod: workbookPeriod,
   readPlan: function(wb){
     var plan={rating:{},dailyTO:{},dailyChk:{}};
     wb.SheetNames.forEach(function(name){
@@ -703,14 +747,9 @@ function pp(v){return v==null?null:v/100;}
 function mergeRating(){
   for(var i=0;i<ST.stores.length;i++){
     var st=ST.stores[i];
-    var r=F1.rating[norm(st.name)];
-    if(r){
-      if(r.progTO!=null){st.progTO=r.progTO;}
-      if(r.progFul!=null){st.progFul=r.progFul;}
-      if(r.growthMoM!=null){st.growthMoM=r.growthMoM;}
-      if(r.lflMoM!=null){st.lflMoM=r.lflMoM;}
-      if(r.progVP!=null){st.progVP=r.progVP;}
-      if(r.progFulVP!=null){st.progFulVP=r.progFulVP;}
+    var rating=F1.rating[norm(st.name)] || {};
+    for(const key of ['progTO','progFul','growthMoM','lflMoM','progVP','progFulVP','forecastPlanTO','forecastPlanVP',...Object.keys(ratingBases)]){
+      st[key]=rating[key] ?? null;
     }
     st.turnDays=turnOf(st);
   }
@@ -768,6 +807,7 @@ window.vIngest=function(w,wb,fname){
       stat('В файле 2 не найдены магазины',true);
       return;
     }
+    ST.period=workbookPeriod(wb);
     ST.stores=stores;
     ST.byNorm={};
     for(i=0;i<stores.length;i++){ST.byNorm[norm(stores[i].name)]=stores[i];}
@@ -785,7 +825,7 @@ window.vIngest=function(w,wb,fname){
     refresh();
     stat('Файл 2 обработан: '+stores.length+' магазинов'+(F1.loaded?' · файл 1 подключён':''));
   }else{
-    parseFile1(wb);
+    F1=parseFile1(wb);
     mergeRating();
     if(ST.stores.length){buildTNIndex();refresh();}
     setChip(1,true,'План-факт: ТО у '+cnt(F1.dailyTO)+', чеки у '+cnt(F1.dailyChk)+', ТН у '+cnt(F1.tn));
@@ -1193,7 +1233,7 @@ function drawOverviewCharts(st,dk,AB){
       {label:'Прогноз',data:d.prog?d.prog.d:[],borderColor:'#12B76A',borderDash:[3,3],tension:0.3,pointRadius:0,borderWidth:2,yAxisID:'y',fill:false}
     ];
     if(F1.net){
-      ds.push({label:'Сеть: факт (правая ось)',data:F1.net.map(function(x){return x.fact;}),borderColor:'#d0d5dd',tension:0.35,pointRadius:0,borderWidth:1.5,yAxisID:'y2',fill:false});
+      ds.push({label:'Сеть: факт (правая ось)',data:d.dates.map(function(date){return F1.net.find(row => row.d===date)?.fact ?? null;}),borderColor:'#d0d5dd',tension:0.35,pointRadius:0,borderWidth:1.5,yAxisID:'y2',fill:false});
     }
     mkChart('c_dyn',{
       type:'line',
@@ -1343,12 +1383,12 @@ function drawTRCharts(st,dk){
     var avgArr=[],i;
     for(i=0;i<dt.fact.d.length;i++){
       var v=dt.fact.d[i];
-      var c=dc.fact.d[i];
-      avgArr.push((v&&c)?v*1000/c:null);
+      var c=dc.fact.d[dc.isoDates.indexOf(dt.isoDates[i])];
+      avgArr.push((Number.isFinite(v)&&c>0)?v*1000/c:null);
     }
     mkChart('c_tr_combo',{
       type:'bar',
-      data:{labels:dc.dates,datasets:[
+      data:{labels:dt.dates,datasets:[
         {label:'ТО факт, тыс ₽',data:dt.fact.d,backgroundColor:'rgba(21,94,239,.55)',borderRadius:5,barPercentage:0.8,yAxisID:'y'},
         {label:'Средний чек, ₽',type:'line',data:avgArr,borderColor:'#B54708',tension:0.35,pointRadius:0,borderWidth:2.2,yAxisID:'y2',fill:false}
       ]},
