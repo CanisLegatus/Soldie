@@ -257,6 +257,7 @@ function scopeMarkupStock(scope) {
 // ── Навигация ──
 function hideAllPages() {
   document.getElementById('directorCard')?.classList.add('hidden');
+  window.MeetingReport?.hide();
   resultEl.classList.add('hidden');
   visionCard.classList.add('hidden');
   if (window.sku3Hide) window.sku3Hide();

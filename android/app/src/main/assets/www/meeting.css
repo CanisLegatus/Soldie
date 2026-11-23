@@ -1,0 +1,70 @@
+.meeting-report-active #su-topbar + .card { display: none; }
+#meetingCard { color: #182839; padding: clamp(14px, 3vw, 30px); }
+#meetingCard h2, #meetingCard h3 { color: inherit; margin: 0; }
+#meetingCard p { margin: 6px 0; }
+.meeting-controls { display: grid; gap: 10px; margin-bottom: 22px; }
+.meeting-toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+.meeting-controls label { display: grid; gap: 4px; font-size: .86rem; min-width: 0; }
+.meeting-controls label[hidden] { display: none; }
+.meeting-controls input, .meeting-controls select, .meeting-controls textarea {
+  background: #fff; color: inherit; border: 1px solid #b9c7d3; border-radius: 6px;
+  padding: 7px; font: inherit; min-height: 35px; max-width: 100%; width: 100%;
+}
+.meeting-controls textarea { min-height: 64px; resize: vertical; }
+#meetingDays { width: 85px; }
+#meetingStore { width: 260px; }
+.meeting-controls button { background: #1b518f; color: white; min-height: 35px; }
+.meeting-controls #meetingSave { background: #e7eef5; color: #1b4069; }
+.meeting-controls details { border: 1px solid #d4dee8; border-radius: 8px; padding: 10px 12px; }
+.meeting-controls summary { cursor: pointer; font-weight: 700; }
+.meeting-controls details p, #meetingStatus { color: #465c71; font-size: .88rem; }
+#meetingStatus:empty { display: none; }
+.meeting-missing-fields, .meeting-extras {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr));
+  gap: 10px; margin-top: 10px;
+}
+.meeting-extras fieldset { display: grid; gap: 8px; min-width: 0; border: 1px solid #d4dee8; border-radius: 6px; padding: 10px; }
+.meeting-extras legend { font-weight: 700; }
+.meeting-heading { border-bottom: 2px solid #1b518f; margin-bottom: 12px; padding-bottom: 6px; }
+.meeting-heading h2 { font-size: 1.65rem; }
+.meeting-table-scroll { overflow-x: auto; }
+#meetingOutput table { border-collapse: collapse; width: 100%; min-width: 465px; font-variant-numeric: tabular-nums; }
+#meetingOutput th, #meetingOutput td { padding: 8px; border: 1px solid #ced9e3; font-size: .9rem; }
+#meetingOutput thead th { background: #e9f1f8; }
+#meetingOutput th[scope="row"] { font-weight: 600; }
+#meetingOutput th:first-child { text-align: left; }
+#meetingOutput td { text-align: right; }
+#meetingOutput td:nth-child(2) { background: #f3f7fc; font-weight: 700; }
+#meetingOutput th small { display: inline; white-space: nowrap; color: #435569; font-weight: normal; }
+#meetingOutput td small { display: block; white-space: nowrap; color: #435569; font-weight: normal; }
+.meeting-note { font-size: .8rem; color: #435569; }
+.meeting-programs { margin-top: 16px; }
+.meeting-programs dl { display: grid; grid-template-columns: max-content 1fr; gap: 7px 14px; }
+.meeting-programs dt { font-weight: 700; }
+.meeting-programs dd { margin: 0; overflow-wrap: anywhere; }
+.meeting-programs dd p { white-space: pre-wrap; }
+.meeting-programs ul { margin: 4px 0; padding-left: 18px; }
+.meeting-charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 330px), 1fr)); gap: 12px; }
+.meeting-chart { margin: 0; padding: 8px; min-width: 0; border: 1px solid #d4dee8; border-radius: 6px; }
+.meeting-chart figcaption { font-size: .88rem; font-weight: 700; }
+.meeting-chart > div { position: relative; height: 170px; }
+
+@page meetingReport { size: A4; margin: 12mm; }
+@media print {
+  body.meeting-report-active { background: #fff !important; }
+  body.meeting-report-active > :not(.su-main),
+  body.meeting-report-active .su-main > :not(#meetingCard),
+  #meetingCard .meeting-controls { display: none !important; }
+  body.meeting-report-active .su-main { max-width: none !important; }
+  #meetingCard { page: meetingReport; padding: 0; margin: 0; color: #000; border: 0; box-shadow: none; font: 10pt Arial, sans-serif; }
+  #meetingCard .meeting-heading { border-color: #000; }
+  #meetingOutput .meeting-table-scroll { overflow: visible; }
+  #meetingOutput table { min-width: 0; }
+  #meetingOutput th, #meetingOutput td { color: #000; background: #fff; padding: 4px; font-size: 9pt; border-color: #888; }
+  #meetingOutput thead { display: table-header-group; }
+  #meetingOutput tr, .meeting-programs, .meeting-chart { break-inside: avoid; }
+  .meeting-charts { display: block; column-count: 2; column-gap: 10px; }
+  .meeting-chart { display: inline-block; width: 100%; margin: 0 0 8px; }
+  .meeting-chart > div { height: auto; }
+  .meeting-chart canvas { width: 100% !important; height: auto !important; }
+}

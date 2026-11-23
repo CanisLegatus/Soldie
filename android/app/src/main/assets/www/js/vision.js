@@ -111,6 +111,11 @@ function dlab(c){
   if(m){return ('0'+m[1]).slice(-2)+'.'+('0'+m[2]).slice(-2);}
   return s(c);
 }
+function dailyDate(c){
+  var input=s(c).trim().replace(/^((?:\d{1,2}[./]){2})(\d{2})$/, (_, prefix, year) => prefix+'20'+year);
+  var d=SoldieRules.date(c instanceof Date ? c : input);
+  return d ? [d.getFullYear(),('0'+(d.getMonth()+1)).slice(-2),('0'+d.getDate()).slice(-2)].join('-') : null;
+}
 function fmt(v,d){
   if(v==null||!isFinite(v)){return '—';}
   return v.toLocaleString('ru-RU',{minimumFractionDigits:d||0,maximumFractionDigits:d||0});
@@ -318,7 +323,7 @@ function findColSub(r,cands){
   }
   return -1;
 }
-function parseRatingBlock(R,h,iMag,map){
+function parseRatingBlock(R,h,iMag,map,rating){
   for(var i=h+1;i<R.length;i++){
     var r=R[i];
     if(!r){break;}
@@ -327,8 +332,8 @@ function parseRatingBlock(R,h,iMag,map){
     if(/итого/i.test(nm)){continue;}
     if(num(r[0])==null){break;}
     var key=norm(nm);
-    if(!F1.rating[key]){F1.rating[key]={};}
-    var o=F1.rating[key];
+    if(!rating[key]){rating[key]={};}
+    var o=rating[key];
     if(map.progTO>=0){o.progTO=num(r[map.progTO]);}
     if(map.progFul>=0){o.progFul=num(r[map.progFul]);}
     if(map.growthMoM>=0){o.growthMoM=num(r[map.growthMoM]);}
@@ -337,7 +342,7 @@ function parseRatingBlock(R,h,iMag,map){
     if(map.progFulVP>=0){o.progFulVP=num(r[map.progFulVP]);}
   }
 }
-function parseRatingRows(R){
+function parseRatingRows(R,rating=F1.rating){
   for(var i=0;i<R.length;i++){
     var r=R[i];
     if(!r){continue;}
@@ -351,23 +356,23 @@ function parseRatingRows(R){
     if(aTO>=0&&bTO>=0){
       var cTO=findColSub(r,['то-прирост к прошл']);
       var dTO=findColSub(r,['lfl прирост','то-lfl']);
-      parseRatingBlock(R,i,iMag,{progTO:aTO,progFul:bTO,growthMoM:cTO,lflMoM:dTO,progVP:-1,progFulVP:-1});
+      parseRatingBlock(R,i,iMag,{progTO:aTO,progFul:bTO,growthMoM:cTO,lflMoM:dTO,progVP:-1,progFulVP:-1},rating);
     }
     var aVP=findColSub(r,['вп-прогноз, тыс']);
     var bVP=findColSub(r,['вп-прогноз выполнения']);
     if(aVP>=0&&bVP>=0){
-      parseRatingBlock(R,i,iMag,{progTO:-1,progFul:-1,growthMoM:-1,lflMoM:-1,progVP:aVP,progFulVP:bVP});
+      parseRatingBlock(R,i,iMag,{progTO:-1,progFul:-1,growthMoM:-1,lflMoM:-1,progVP:aVP,progFulVP:bVP},rating);
     }
   }
 }
-function parseWide(R){
+function parseWide(R,minDates=28){
   var hdr=-1,dateIdx=[],i,x;
   for(i=0;i<R.length;i++){
     var r=R[i];
     if(!r){continue;}
     var ds=[];
     for(x=0;x<r.length;x++){if(isDateLike(r[x])){ds.push(x);}}
-    if(ds.length<28){continue;}
+    if(ds.length<minDates){continue;}
     var hasPlan=false;
     for(x=0;x<r.length;x++){if(s(r[x]).trim()==='План'){hasPlan=true;break;}}
     if(hasPlan){hdr=i;dateIdx=ds;break;}
@@ -375,6 +380,7 @@ function parseWide(R){
   if(hdr<0){return null;}
   var dates=[];
   for(i=0;i<dateIdx.length;i++){dates.push(dlab(R[hdr][dateIdx[i]]));}
+  var isoDates=dateIdx.map(function(col){return dailyDate(R[hdr][col]);});
   var kind='to';
   for(i=hdr+1;i<R.length&&i<hdr+4000;i++){
     var rr=R[i];
@@ -395,7 +401,7 @@ function parseWide(R){
     else if(mk.indexOf('прогноз')>=0){key='prog';}
     else if(mk.indexOf('выполн')>=0){key='ful';}
     if(!key){continue;}
-    if(!stores[nm]){stores[nm]={dates:dates};}
+    if(!stores[nm]){stores[nm]={dates:dates,isoDates:isoDates};}
     var daily=[];
     for(x=0;x<dateIdx.length;x++){daily.push(num(rw[dateIdx[x]]));}
     stores[nm][key]={m:num(rw[4]),d:daily};
@@ -594,6 +600,44 @@ function levels(){
   }
   return out;
 }
+
+function mergeMeetingSeries(previous, current){
+  if(!previous || !current) return current || previous;
+  var oldIndex=new Map(previous.isoDates.map((day,i) => [day,i]));
+  var newIndex=new Map(current.isoDates.map((day,i) => [day,i]));
+  var isoDates=[...new Set([...oldIndex.keys(),...newIndex.keys()])].filter(Boolean).sort();
+  var result={isoDates};
+  for(var kind of ['fact','plan','prog']){
+    result[kind]={ d:isoDates.map(day => current[kind]?.d[newIndex.get(day)] ?? previous[kind]?.d[oldIndex.get(day)] ?? null) };
+  }
+  return result;
+}
+
+window.VisionMeeting = {
+  selected: function(){return selS()?.name || '';},
+  current: function(){return {stores:ST.stores, plan:F1};},
+  readStats: parseStatsBlocks,
+  readPlan: function(wb){
+    var plan={rating:{},dailyTO:{},dailyChk:{}};
+    wb.SheetNames.forEach(function(name){
+      if(/по тн|тноменклатур|сеть гм|партнер/i.test(name)) return;
+      var rows=rowsOf(wb.Sheets[name]);
+      var wide=parseWide(rows,1);
+      if(wide){
+        var target=wide.kind==='to' ? plan.dailyTO : plan.dailyChk;
+        Object.entries(wide.stores).forEach(function(entry){
+          var key=norm(entry[0]);
+          target[key]=mergeMeetingSeries(target[key],entry[1]);
+        });
+      }else{parseRatingRows(rows,plan.rating);}
+    });
+    return plan;
+  },
+  mergeSeries: mergeMeetingSeries,
+  aggregate: aggregate,
+  storeKey: norm
+};
+
 function activeList(){return levels()[ST.mode]||ST.stores;}
 function customCount(){return cnt(ST.custom);}
 function benchLabel(){

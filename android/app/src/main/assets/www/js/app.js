@@ -154,6 +154,12 @@ segBtns.forEach(btn => {
       updateBtn();
       return;
     }
+    if (currentMode === 'meeting') {
+      initializeSku3();
+      window.MeetingReport?.show();
+      updateBtn();
+      return;
+    }
     if (currentMode === 'sku3') {
       activateSku3();
       updateBtn();
@@ -186,15 +192,18 @@ filterDateInput.addEventListener('change', () => { markdownDates[currentMode] = 
 
 // ── Раздел «3SKU» (suadela): ленивая активация при первом открытии ──
 let sku3Ready = false;
-function activateSku3() {
+function initializeSku3() {
+  if (sku3Ready) return true;
   if (typeof window.sku3RenderMarkup !== 'function') {
     showStatus('❌ Не загружен файл js/sku3.js — раздел «3SKU» недоступен.', 'error');
     return;
   }
-  if (!sku3Ready) {
-    window.sku3RenderMarkup();
-    try { window.sku3Init(); sku3Ready = true; } catch (e) { console.error(e); showStatus('❌ Ошибка инициализации 3SKU: ' + e.message, 'error'); return; }
-  }
+  window.sku3RenderMarkup();
+  try { window.sku3Init(); sku3Ready = true; } catch (e) { console.error(e); showStatus('❌ Ошибка инициализации 3SKU: ' + e.message, 'error'); }
+  return sku3Ready;
+}
+function activateSku3() {
+  if (!initializeSku3()) return;
   const card = document.getElementById('sku3Card');
   if (card) card.classList.remove('hidden');
 }
@@ -208,13 +217,7 @@ function activateSales() {
     return;
   }
   // Парсер и магазин данных продаж общие с 3SKU (suadela) — гарантируем готовность sku3Api.
-  if (!window.sku3Api && typeof window.sku3RenderMarkup === 'function') {
-    try {
-      window.sku3RenderMarkup();
-      window.sku3Init();
-      sku3Ready = true;
-    } catch (e) { console.error(e); }
-  }
+  if (!window.sku3Api) initializeSku3();
   if (!salesReady) {
     window.salesRenderMarkup();
     try {
@@ -335,6 +338,6 @@ updateBtn();
 
 // Standalone entry links open their corresponding section in the shared application.
 const entryMode = location.hash.slice(1);
-if (['r29', 'sku3', 'sales', 'vision', 'director'].includes(entryMode)) switchMode(entryMode);
+if (['r29', 'sku3', 'sales', 'vision', 'director', 'meeting'].includes(entryMode)) switchMode(entryMode);
 
 if (currentMode === "vision") { hideAllPages(); visionCard.classList.remove("hidden"); }

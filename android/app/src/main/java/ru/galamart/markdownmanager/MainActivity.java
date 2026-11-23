@@ -7,6 +7,8 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.print.PrintAttributes;
+import android.print.PrintManager;
 import android.util.Base64;
 import android.webkit.JavascriptInterface;
 import android.webkit.ValueCallback;
@@ -146,7 +148,7 @@ public final class MainActivity extends Activity {
         }
     }
 
-    /** Exposes only save operations to JavaScript served from the bundled app origin. */
+    /** Exposes document operations to JavaScript served from the bundled app origin. */
     private final class AndroidBridge {
         @JavascriptInterface
         public void saveBase64(String filename, String base64) {
@@ -162,6 +164,18 @@ public final class MainActivity extends Activity {
         @JavascriptInterface
         public void saveText(String filename, String content) {
             requestSave(filename, content.getBytes(StandardCharsets.UTF_8), "application/json");
+        }
+
+        @JavascriptInterface
+        public void printMeetingReport() {
+            runOnUiThread(() -> {
+                if (webView == null || isFinishing()) return;
+                PrintManager manager = getSystemService(PrintManager.class);
+                if (manager == null) return;
+                String title = "Отчёт к собранию";
+                manager.print(title, webView.createPrintDocumentAdapter(title),
+                        new PrintAttributes.Builder().setMediaSize(PrintAttributes.MediaSize.ISO_A4).build());
+            });
         }
     }
 
