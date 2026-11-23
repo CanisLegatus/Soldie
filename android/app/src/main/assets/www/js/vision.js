@@ -447,8 +447,9 @@ function parseWide(R,minDates=28,sheetName=''){
     else if(mk.indexOf('факт')>=0){key='fact';}
     else if(mk.indexOf('план')>=0){key='plan';}
     if(!key){continue;}
-    if(!stores[storeName]){stores[storeName]={dates:dates,isoDates:isoDates,monthly:{},name:storeName,region:''};}
+    if(!stores[storeName]){stores[storeName]={dates:dates,isoDates:isoDates,monthly:{},name:storeName,region:'',fo:''};}
     if(nm && norm(R[hdr][1])==='регион') stores[storeName].region=s(rw[1]).trim();
+    if(nm && norm(R[hdr][2])==='федеральный округ') stores[storeName].fo=s(rw[2]).trim();
     var daily=[];
     for(x=0;x<dateIdx.length;x++){daily.push(num(rw[dateIdx[x]]));}
     stores[storeName][key]={m:num(rw[4]),d:daily};
@@ -665,7 +666,7 @@ function mergeMeetingSeries(previous, current){
   for(var [month,values] of Object.entries(current.monthly||{})){
     monthly[month]={...monthly[month],...values};
   }
-  var result={isoDates,monthly,name:current.name||previous.name,region:current.region||previous.region};
+  var result={isoDates,monthly,name:current.name||previous.name,region:current.region||previous.region,fo:current.fo||previous.fo};
   for(var kind of ['fact','plan','prog']){
     result[kind]={ d:isoDates.map(day => current[kind]?.d[newIndex.get(day)] ?? previous[kind]?.d[oldIndex.get(day)] ?? null) };
   }

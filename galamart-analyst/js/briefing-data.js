@@ -28,7 +28,6 @@
         for (const [key, row] of Object.entries(group || {})) add(row.name || key, row.region);
       }
       for (const key of Object.keys(source.plan?.rating || {})) add(key);
-      for (const key of Object.keys(source.plan?.tn || {})) add(key);
       for (const key of Object.keys(source.planSource?.daily || {})) add(key);
     }
     const sku = window.sku3Api?.getSettings();
@@ -36,7 +35,40 @@
     return [...stores.values()].sort((a, b) => a.name.localeCompare(b.name, 'ru'));
   }
 
-  function build({ imports, stores, store, end, today, mode, order, thresholds, skuMetrics, skuImports }) {
+  const metrics = ['to', 'vp', 'checks'];
+
+  function reportEstimate(plan, key, metric, monthId) {
+    const rating = plan.rating?.[key];
+    const calendar = (metric === 'checks' ? plan.dailyChk : plan.dailyTO)?.[key]?.monthly?.[monthId];
+    const amount = (value, target, completion) => value ?? (target > 0 && R.valid(completion) ? target * completion / 100 : null);
+    if (metric === 'checks') return { plan: calendar?.plan, result: amount(calendar?.prog, calendar?.plan, calendar?.progFul) };
+    const target = metric === 'to' ? rating?.forecastPlanTO ?? calendar?.plan : rating?.forecastPlanVP;
+    const forecast = metric === 'to' ? rating?.progTO ?? calendar?.prog : rating?.progVP;
+    const rate = metric === 'to' ? rating?.progFul ?? calendar?.progFul : rating?.progFulVP;
+    return { plan: R.rubles(target), result: R.rubles(amount(forecast, target, rate)) };
+  }
+
+  function monthlyCompetition(entry, stats, key, monthId, monthClosed) {
+    if (!entry) return null;
+    const calendar = entry.plan.dailyTO || {};
+    const candidates = stats?.length
+      ? stats.map(row => ({ key: keyOf(row.name), region: row.region, fo: row.fo, fact: R.rubles(row.to), plan: R.rubles(row.planTO) }))
+      : Object.entries(calendar).map(([key, row]) => ({ key, region: row.region, fo: row.fo }));
+    const own = candidates.find(row => row.key === key);
+    if (!own) return null;
+    const russianDistrict = value => /^(?:центральный|северо-западный|южный|северо-кавказский|приволжский|уральский|сибирский|дальневосточный)(?:\s|$)/i.test(value?.trim() || '');
+    const country = russianDistrict(own.fo);
+    const peers = country ? candidates.filter(row => russianDistrict(row.fo)) : candidates;
+    const rows = peers.map(row => {
+      const forecast = reportEstimate(entry.plan, row.key, 'to', monthId);
+      const fact = row.fact ?? R.rubles(entry.plan.rating?.[row.key]?.monthRevenue);
+      return { ...row, plan: forecast.plan ?? row.plan, result: monthClosed ? fact : forecast.result };
+    });
+    const result = R.competition(rows, key);
+    return result && { ...result, country, monthClosed };
+  }
+
+  function build({ imports, store, end, today, mode, thresholds, skuMetrics, skuImports }) {
     const range = R.period(end, mode);
     const { start, monthStart, monthEnd } = range;
     const closed = end < today;
@@ -52,7 +84,7 @@
     const series = (entry, metric) => entry.plan[metric === 'to' ? 'dailyTO' : 'dailyChk']?.[store.key];
     const statsAt = (first, last) => stats.find(entry => exact(entry.statsSource, first, last));
     const planAt = (first, last) => plans.find(entry => exact(entry.planSource, first, last) &&
-      (entry.plan.rating?.[store.key] || series(entry, 'to') || series(entry, 'checks') || entry.plan.tn?.[store.key]));
+      (entry.plan.rating?.[store.key] || series(entry, 'to') || series(entry, 'checks')));
     const statsFor = (entry, field) => entry?.stats.find(row => keyOf(row.name) === store.key)?.[field] ?? null;
 
     function dayInput(date, metric, kind, track = true, onSource) {
@@ -173,7 +205,7 @@
     const displayMonthly = !hasFacts(monthly) && hasFacts(completedFact) ? completedFact : monthly;
     const factDate = displayMonthly === monthly ? end : previousDay;
     if (factDate !== end) notes.add('Месячный факт приведён по последний закрытый день.');
-    const monthlyPlan = Object.fromEntries(['to', 'vp', 'checks'].map(metric => [metric, fullPlan(metric)]));
+    const monthlyPlan = Object.fromEntries(metrics.map(metric => [metric, fullPlan(metric)]));
     const calendarPlan = (dates, metric) => R.sum(dates.map(date => dayInput(date, metric, 'plan')));
     const periodDates = R.days(start, end);
     const kpiFact = mode === 'month' ? displayMonthly : totals(start, end, true);
@@ -189,20 +221,39 @@
       markup: R.metric(R.markup(kpiPlan.vp, planCost), R.markup(kpiFact.vp, actualCost)),
       checks: R.metric(kpiPlan.checks, kpiFact.checks)
     };
-    const elapsedPlan = calendarPlan(completed, 'to');
+    const elapsedPlans = Object.fromEntries(metrics.map(metric => [metric, calendarPlan(completed, metric)]));
     const pace = {
-      to: R.percent(completedFact.to, elapsedPlan),
-      checks: R.percent(completedFact.checks, calendarPlan(completed, 'checks'))
+      to: R.percent(completedFact.to, elapsedPlans.to),
+      checks: R.percent(completedFact.checks, elapsedPlans.checks)
     };
-    const official = R.rubles(monthPlan?.plan.rating?.[store.key]?.progTO);
-    const monthlyForecast = R.rubles(series(monthPlan || { plan: {} }, 'to')?.monthly?.[monthId]?.prog);
-    const estimate = use('Прогноз', monthPlan?.planSource, official ?? monthlyForecast);
+    const monthClosed = closed && end === monthEnd;
+    const forecastEntry = monthPlan || (!closed ? plans.filter(entry => {
+      const period = entry.planSource?.period;
+      return period?.start === monthStart && period.end < end &&
+        metrics.some(metric => R.valid(reportEstimate(entry.plan, store.key, metric, monthId).result));
+    }).sort((a, b) => b.planSource.period.end.localeCompare(a.planSource.period.end))[0] : null);
+    const forecastDate = forecastEntry?.planSource?.period?.end;
+    const estimates = {};
+    const forecasts = {};
+    for (const metric of metrics) {
+      const official = forecastEntry ? reportEstimate(forecastEntry.plan, store.key, metric, monthId).result : null;
+      estimates[metric] = monthClosed ? monthly[metric] : use('Прогноз', forecastEntry?.planSource, official);
+      forecasts[metric] = R.forecast({
+        monthEnd, end, today, fact: monthly[metric], plan: monthlyPlan[metric], elapsedPlan: elapsedPlans[metric],
+        official: estimates[metric], completedFact: completedFact[metric]
+      });
+    }
+    if (mode === 'month') {
+      for (const metric of metrics) kpi[metric].forecast = forecasts[metric];
+      // Both forecasts come from one dated snapshot before deriving markup.
+      kpi.markup.forecast = monthClosed ? kpi.markup.fact : R.markup(estimates.vp, R.delta(estimates.to, estimates.vp));
+    }
+    const competition = monthlyCompetition(forecastEntry, statsAt(monthStart, forecastDate)?.stats, store.key, monthId, monthClosed);
+    if (competition) remember('Рейтинг', forecastEntry.planSource);
     const month = {
       ...R.metric(monthlyPlan.to, displayMonthly.to),
-      factDate,
-      forecast: R.forecast({ monthEnd, end, today, fact: monthly.to, plan: monthlyPlan.to, elapsedPlan,
-        official: estimate, completedFact: completedFact.to }),
-      paceGap: R.delta(completedFact.to, elapsedPlan)
+      factDate, forecastDate, monthClosed, competition, forecast: forecasts.to,
+      paceGap: R.delta(completedFact.to, elapsedPlans.to)
     };
     const now = dayValues(end);
     const day = R.dayMetrics(now.plan, now.fact, closed);
@@ -219,11 +270,17 @@
       }
     }
 
-    const deptSource = plans.find(entry => exact(entry.planSource, start, end) && entry.plan.tn?.[store.key]?.length);
-    const departments = R.departments({ rows: deptSource?.plan.tn, store: store.key, region: store.region, stores, keyOf, order });
-    if (deptSource) remember('Товарные группы', deptSource.planSource);
+    const calendar = (mode === 'month' ? monthDays : periodDates).map(date => {
+      const row = { date };
+      for (const metric of ['to', 'checks']) {
+        const plan = dayInput(date, metric, 'plan');
+        const fact = date > end ? null : dayInput(date, metric, 'fact') ?? statsDay(date, metric);
+        row[metric] = { plan, fact };
+      }
+      return row;
+    });
 
-    const dataSources = [...used.values()].filter(source => ['Статистика', 'Рейтинг', 'План-факт', 'Продажи', 'Товарные группы', '3SKU'].includes(source.label));
+    const dataSources = [...used.values()].filter(source => ['Статистика', 'Рейтинг', 'План-факт', 'Продажи', '3SKU'].includes(source.label));
     const cutoffs = new Set(dataSources.filter(source => source.label !== '3SKU').map(source => source.period?.end).filter(Boolean));
     const skuDates = dataSources.filter(source => source.label === '3SKU').map(source => source.period.end).sort();
     if (skuDates.length) cutoffs.add(skuDates.at(-1));
@@ -239,7 +296,7 @@
       }
     }
     const time = !closed && times.length === 1 ? times[0] : null;
-    const view = { range, month, kpi, day, sku, departments, closed, pace, time, notes: [...notes], used: [...used.values()] };
+    const view = { range, month, kpi, day, sku, calendar, closed, pace, time, notes: [...notes], used: [...used.values()] };
     view.focus = R.priorities(view, thresholds);
     return view;
   }

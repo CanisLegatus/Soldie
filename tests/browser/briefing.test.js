@@ -30,11 +30,13 @@ test('briefing reuses real imports and prints a single A4, plus an explicitly ti
       el.value = value;
       el.dispatchEvent(new Event('change', { bubbles: true }));
     }, date);
-    const exportA4 = async () => {
+    const exportA4 = async (landscape = false) => {
       const pdf = Buffer.from(await page.pdf({ preferCSSPageSize: true, printBackground: true })).toString('latin1');
       assert.equal((pdf.match(/\/Type \/Page\b/g) || []).length, 1);
       const size = pdf.match(/\/MediaBox \[0 0 (\S+) (\S+)\]/);
-      assert.ok(size && Math.abs(Number(size[1]) - 595) < 1 && Math.abs(Number(size[2]) - 842) < 1);
+      assert.ok(size);
+      assert.ok(Math.abs(Number(size[1]) - (landscape ? 842 : 595)) < 1 &&
+        Math.abs(Number(size[2]) - (landscape ? 595 : 842)) < 1, size[0]);
     };
 
     assert.match(await text('#briefingStore'), /Нет загруженных магазинов/);
@@ -45,17 +47,41 @@ test('briefing reuses real imports and prints a single A4, plus an explicitly ti
         vIngest(flag, XLSX.read(new Uint8Array(data), { type: 'array', cellDates: true }), filename), bytes, name, kind);
     }
     await page.select('#briefingStore', 'влд бородинская 14');
-    assert.equal(await page.$eval('#briefingDate', el => el.value), '2026-11-22');
+    assert.equal(await page.$eval('#briefingDate', el => el.value), '2026-11-23');
+    assert.match(await text('.briefing-today'), /План на сегодня/);
+    assert.match(await text('.briefing-focus'), /312 чеков со средним чеком 694 ₽/);
+    assert.match(await text('.briefing-month-info'), /Срез на 22\.11\.2026/);
+    assert.match(await text('.briefing-competition'), /5 из 305/);
+    await setDay('2026-11-22');
     assert.match(await text('.briefing-ring strong'), /86,1/);
     assert.match(await text('.briefing-month-info'), /115,5.*%/);
     assert.match(await text('.briefing-month-info'), /\+822\s645/);
-    assert.match(await text('.briefing-kpi-card:nth-child(3)'), /154\s*%[\s\S]*\+2,9\s*п\. п\./);
-    assert.match(await text('.briefing-today'), /День завершён[\s\S]*204\s307\s*₽/);
-    assert.match(await text('.briefing-today tbody tr:first-child td:last-child'), /122,2/);
-    assert.match(await text('.briefing-departments'), /нет планов отделов/);
+    assert.match(await text('.briefing-competition'), /Место по РФ\s+5 из 305\s+К сети\s+\+14,4\s+п\. п\.\s+К региону\s+\+6,9/);
+    const cards = await page.$$eval('.briefing-kpi-card', elements =>
+      elements.map(el => [el.querySelector('strong').innerText.replace(/\s+/g, ' '), el.classList.contains('good'), getComputedStyle(el).backgroundColor]));
+    assert.deepEqual(cards, ['115,5 %', '116,1 %', '153,2 %', '108 %'].map(value => [value, true, 'rgb(229, 244, 233)']));
+    assert.match(await text('.briefing-kpi-card:nth-child(3)'), /План 151,1\s*%[\s\S]*Факт 154\s*%/);
+    assert.match(await text('.briefing-kpi-card:first-child'), /Факт 6\s136\s758/);
+    await page.$eval('#briefingWatch', el => {
+      el.value = '117';
+      document.getElementById('briefingGood').value = '118';
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    assert.equal(await page.$eval('.briefing-kpi-card:first-child', el => getComputedStyle(el).backgroundColor), 'rgb(253, 232, 230)');
+    await page.$eval('#briefingWatch', el => {
+      el.value = '90';
+      document.getElementById('briefingGood').value = '100';
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    assert.match(await text('.briefing-today'), /План на день[\s\S]*День завершён[\s\S]*204\s307\s*₽/);
+    assert.match(await text('.briefing-day-goal:first-child'), /275\s079\s*₽[\s\S]*122,2/);
+    assert.equal(await page.$('.briefing-departments'), null);
     assert.match(await text('.briefing-sku'), /Нет данных акции/);
-    assert.equal(await page.$$eval('.briefing-dept-grid tbody tr', rows => rows.length), 23);
-    assert.equal(await page.$eval('.briefing-dept-grid tbody th', el => getComputedStyle(el).whiteSpace), 'normal');
+    assert.equal(await page.$$eval('.briefing-chart', rows => rows.length), 2);
+    assert.equal(await page.$$eval('.briefing-chart .briefing-chart-day', rows => rows.length), 60);
+    assert.equal(await page.$$eval('.briefing-chart-day.selected[data-date="2026-11-22"]', rows => rows.length), 2);
+    assert.equal(await page.$$eval('.briefing-chart-day[data-date="2026-11-23"] .fact', rows => rows.length), 0);
+    assert.equal(await page.$$eval('.briefing-chart-day[data-date="2026-11-23"] .plan', rows => rows.length), 2);
     await page.click('#briefingGenerate');
     assert.equal(await text('#briefingStatus'), 'Брифинг сформирован.');
     await page.click('#briefingPreview');
@@ -64,30 +90,21 @@ test('briefing reuses real imports and prints a single A4, plus an explicitly ti
     assert.equal(await page.$eval('.briefing-controls', el => getComputedStyle(el).display), 'none');
     assert.equal(await page.$eval('#su-sidebar', el => getComputedStyle(el).display), 'none');
     await exportA4();
-    await page.evaluate(() => {
-      for (const table of document.querySelectorAll('.briefing-dept-grid table')) {
-        const body = table.tBodies[0];
-        if (body.rows.length < 12) body.append(body.lastElementChild.cloneNode(true));
-        for (const row of body.rows) {
-          row.cells[0].firstElementChild.textContent = 'Длинное название товарного отдела для проверки переноса текста в две строки';
-        }
-      }
-      const focus = document.querySelector('.briefing-focus div');
-      const additional = document.createElement('p');
-      additional.textContent = 'Приоритет с длинным названием группы товаров и описанием действия для команды магазина.';
-      focus.append(additional);
-    });
-    await exportA4();
     await page.emulateMediaType(null);
+    await page.select('#briefingOrientation', 'landscape');
+    assert.equal(await page.$eval('#briefingCard', el => el.classList.contains('briefing-landscape')), true);
+    assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('soldie.briefing.v1')).orientation), 'landscape');
+    await exportA4(true);
 
     await page.select('#briefingPeriod', 'week');
     assert.match(await text('.briefing-kpi'), /16\.11\.2026 — 22\.11\.2026/);
-    assert.match(await text('.briefing-departments'), /Нет продаж по товарным группам/);
+    assert.equal(await page.$$eval('.briefing-chart-day', rows => rows.length), 14);
     await setDay('2026-11-23');
     assert.match(await text('.briefing-today'), /время среза неизвестно/);
-    assert.equal(await text('.briefing-today tbody tr:first-child td:nth-child(3)'), '—');
+    assert.match(await text('.briefing-day-goal:first-child'), /Факт —/);
     assert.match(await text('.briefing-month-info'), /Факт на 22\.11\.2026/);
     assert.match(await text('.briefing-data-note'), /последний закрытый день/);
+    assert.match(await text('.briefing-competition'), /5 из 305/);
 
     await page.evaluate(() => {
       const plan = XLSX.utils.book_new();
@@ -119,17 +136,24 @@ test('briefing reuses real imports and prints a single A4, plus an explicitly ti
       window.dispatchEvent(new Event('sku3-data-changed'));
     });
     await page.select('#briefingStore', 'проверочный');
-    assert.match(await text('.briefing-today'), /Данные на 12:15/);
-    assert.match(await text('.briefing-today tbody tr:nth-child(3)'), /1\s000\s₽\s+800\s₽\s+1\s200\s₽/);
-    assert.match(await text('.briefing-today tbody tr:nth-child(4)'), /45\s000\s₽\s+20\s000\s₽\s+25\s000\s₽/);
+    assert.match(await text('.briefing-today'), /План на сегодня[\s\S]*Данные на 12:15/);
+    assert.match(await text('.briefing-day-goal:first-child'), /100\s000\s₽[\s\S]*40\s000\s₽[\s\S]*60\s000\s₽/);
+    assert.match(await text('.briefing-day-detail:first-child'), /План 1\s000\s₽\s+Факт 800\s₽\s+Нужен на оставшиеся чеки 1\s200\s₽/);
+    assert.match(await text('.briefing-day-detail:last-child'), /План 45\s000\s₽\s+Факт 20\s000\s₽\s+Осталось 25\s000\s₽/);
     assert.match(await text('.briefing-sku'), /12\s*%[\s\S]*20\s*%[\s\S]*14\s*шт\./);
     assert.equal(await page.$$eval('.briefing-sku li', rows => rows.length), 3);
+    await exportA4(true);
+    await page.select('#briefingOrientation', 'portrait');
     await exportA4();
     await page.evaluate(() => { window.print = () => { window.printCount = (window.printCount || 0) + 1; }; });
     await page.click('#briefingPrint');
     await page.click('#briefingPdf');
     assert.equal(await page.evaluate(() => window.printCount), 2);
     assert.match(await text('#briefingStatus'), /Сохранить как PDF/);
+    await page.evaluate(() => { window.AndroidBridge = { printDailyBriefing: landscape => { window.nativeOrientation = landscape; } }; });
+    await page.select('#briefingOrientation', 'landscape');
+    await page.click('#briefingPrint');
+    assert.equal(await page.evaluate(() => window.nativeOrientation), true);
     await page.click('[data-mode="vision"]');
     assert.equal(await page.$eval('#briefingCard', el => el.classList.contains('hidden')), true);
     assert.equal(await page.$eval('body', el => el.classList.contains('briefing-active')), false);

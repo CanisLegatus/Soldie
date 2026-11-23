@@ -168,21 +168,21 @@ public final class MainActivity extends Activity {
 
         @JavascriptInterface
         public void printMeetingReport() {
-            printReport("Отчёт к собранию", false);
+            printReport("Отчёт к собранию", false, false);
         }
 
         @JavascriptInterface
-        public void printDailyBriefing() {
-            printReport("Ежедневный брифинг", true);
+        public void printDailyBriefing(boolean landscape) {
+            printReport("Ежедневный брифинг", true, landscape);
         }
 
-        private void printReport(String title, boolean usePageMargins) {
+        private void printReport(String title, boolean usePageMargins, boolean landscape) {
             runOnUiThread(() -> {
                 if (webView == null || isFinishing()) return;
                 PrintManager manager = getSystemService(PrintManager.class);
                 if (manager == null) return;
                 PrintAttributes.Builder attributes = new PrintAttributes.Builder()
-                        .setMediaSize(PrintAttributes.MediaSize.ISO_A4);
+                        .setMediaSize(landscape ? PrintAttributes.MediaSize.ISO_A4.asLandscape() : PrintAttributes.MediaSize.ISO_A4);
                 if (usePageMargins) attributes.setMinMargins(PrintAttributes.Margins.NO_MARGINS);
                 manager.print(title, webView.createPrintDocumentAdapter(title), attributes.build());
             });

@@ -40,6 +40,25 @@
     if (valid(official)) return percent(official, plan);
     return percent(end < today ? fact : completedFact, elapsedPlan);
   }
+  function competition(rows, storeKey) {
+    const comparable = [...new Map(rows.filter(row => valid(percent(row.result, row.plan)))
+      .map(row => [row.key, row])).values()];
+    const own = comparable.find(row => row.key === storeKey);
+    if (!own || comparable.length < 2) return null;
+    const score = row => percent(row.result, row.plan);
+    const rankScore = row => Math.round(score(row) * 10);
+    const reference = group => group.length > 1
+      ? percent(sum(group.map(row => row.result)), sum(group.map(row => row.plan))) : null;
+    const region = comparable.filter(row => own.region && row.region === own.region);
+    return {
+      rank: 1 + comparable.filter(row => rankScore(row) > rankScore(own)).length,
+      count: comparable.length,
+      own: score(own),
+      network: reference(comparable),
+      regional: reference(region),
+      regionCount: region.length
+    };
+  }
   function consistent(a, b, tolerance) {
     return !valid(a) || !valid(b) || Math.abs(a - b) <= tolerance;
   }
@@ -65,42 +84,11 @@
     };
   }
 
-  function uniqueGroups(rows, keyOf) {
-    const result = new Map();
-    for (const row of rows || []) {
-      const key = row.code || keyOf(row.g);
-      const previous = result.get(key);
-      if (!previous) result.set(key, row);
-      else if (previous.rev !== row.rev || previous.plan !== row.plan) {
-        result.set(key, { ...row, rev: null, plan: null });
-      }
-    }
-    return result;
-  }
-  function departments({ rows, store, region, stores, keyOf, order }) {
-    const own = uniqueGroups(rows?.[store], keyOf);
-    const members = [...new Set(stores.filter(row => region && row.region === region).map(row => row.key))];
-    const peers = members.map(key => uniqueGroups(rows?.[key], keyOf));
-    const total = sum([...own.values()].map(row => row.rev));
-    const result = [...own].map(([key, row]) => {
-      const achieved = percent(row.rev, row.plan);
-      const comparable = peers.map(map => map.get(key));
-      const regional = comparable.every(other => other?.plan > 0)
-        ? percent(sum(comparable.map(other => other.rev)), sum(comparable.map(other => other.plan))) : null;
-      return { name: row.g, achieved, regional, gap: delta(achieved, regional), share: percent(row.rev, total) };
-    });
-    if (order !== 'source') {
-      const field = order === 'region' ? 'gap' : 'achieved';
-      result.sort((a, b) => (b[field] ?? -Infinity) - (a[field] ?? -Infinity) || (b.share ?? 0) - (a.share ?? 0));
-    }
-    return result;
-  }
-
   function status(value, good, watch) {
     if (!valid(value)) return 'unknown';
     return value >= good ? 'good' : value >= watch ? 'watch' : 'bad';
   }
-  function priorities({ pace, day, closed, kpi, sku, departments }, thresholds) {
+  function priorities({ pace, day, closed, kpi, sku }, thresholds) {
     const cutoff = thresholds.watch;
     const items = [];
     const suggest = (score, text) => items.push({ score, text });
@@ -118,14 +106,11 @@
     if (valid(to) && to < cutoff) suggest(100 - to, 'ТО отстаёт. Усиливаем допродажи и работу со средним чеком.');
     const penetration = percent(sku?.factPenetration, sku?.target);
     if (valid(penetration) && penetration < cutoff) suggest(100 - penetration, '3SKU ниже цели. Предлагаем акционные товары каждому покупателю.');
-    const worst = departments.filter(row => valid(row.gap) && row.gap < -(100 - cutoff) && row.achieved < cutoff)
-      .sort((a, b) => a.gap - b.gap)[0];
-    if (worst) suggest(-worst.gap, worst.name + ' ниже региона. Проверяем наличие и выкладку.');
     return items.sort((a, b) => b.score - a.score).slice(0, 2).map(item => item.text);
   }
 
   const rules = { valid, percent, ratio, sum, delta, rubles, markup, point, days, shift, period,
-    metric, dayMetrics, forecast, consistent, skuReport, departments, status, priorities };
+    metric, dayMetrics, forecast, competition, consistent, skuReport, status, priorities };
   if (typeof module === 'object') module.exports = rules;
   else root.BriefingRules = rules;
 })(typeof window === 'object' ? window : globalThis);

@@ -16,7 +16,8 @@
       <div class="briefing-fields">
         <label>Магазин<select id="briefingStore"></select></label>
         <label>Отчётная дата<input id="briefingDate" type="date" required></label>
-        <label>Период KPI и отделов<select id="briefingPeriod"><option value="month">С начала месяца</option><option value="week">Последние 7 дней</option></select></label>
+        <label>Период анализа<select id="briefingPeriod"><option value="month">С начала месяца</option><option value="week">Последние 7 дней</option></select></label>
+        <label>Ориентация A4<select id="briefingOrientation"><option value="portrait">Книжная</option><option value="landscape">Альбомная</option></select></label>
       </div>
       <div class="briefing-actions">
         <button type="button" id="briefingGenerate" class="briefing-primary">Сформировать брифинг</button>
@@ -27,7 +28,6 @@
       <details class="briefing-settings">
         <summary>Настройки и источники</summary>
         <div class="briefing-fields">
-          <label>Порядок отделов<select id="briefingSort"><option value="achieved">По выполнению</option><option value="region">По разнице с регионом</option><option value="source">Как в выгрузке</option></select></label>
           <label>Зелёный от, %<input id="briefingGood" type="number" min="0" max="200" step="0.1"></label>
           <label>Жёлтый от, %<input id="briefingWatch" type="number" min="0" max="200" step="0.1"></label>
         </div>
@@ -43,7 +43,7 @@
   let selectedStore = typeof preferences.store === 'string' ? preferences.store : '';
   let selectedDate = /^\d{4}-\d{2}-\d{2}$/.test(preferences.end || '') ? preferences.end : '';
   el('Period').value = preferences.mode === 'week' ? 'week' : 'month';
-  el('Sort').value = ['achieved', 'region', 'source'].includes(preferences.order) ? preferences.order : 'achieved';
+  el('Orientation').value = preferences.orientation === 'landscape' ? 'landscape' : 'portrait';
   el('Good').value = preferences.good ?? 100;
   el('Watch').value = preferences.watch ?? 90;
 
@@ -61,22 +61,21 @@
   const sectionTitle = (title, meta = '') => `<div class="briefing-section-title"><h3>${title}</h3>${meta ? `<span>${meta}</span>` : ''}</div>`;
 
   function render(view, store, thresholds) {
-    const { range, month, kpi, day, sku, departments, closed, pace, time, notes, used, focus } = view;
+    const { range, month, kpi, day, sku, calendar, closed, pace, time, notes, used, focus } = view;
+    const monthlyCards = el('Period').value === 'month';
+    const benchmark = month.competition;
+    const forecastCutoff = month.forecastDate && month.forecastDate !== range.end ? 'Срез на ' + date(month.forecastDate) : '';
     const tone = value => R.status(value, thresholds.good, thresholds.watch);
     const monthCards = [
+      [month.monthClosed ? 'Итог месяца' : 'Прогноз ТО к концу месяца', pct(month.forecast), tone(month.forecast)],
       ['Месячный план', money(month.plan)],
       [month.factDate === range.end ? 'Факт с начала месяца' : 'Факт на ' + date(month.factDate), money(month.fact)],
       ['Осталось до плана', money(month.left)],
-      ['Прогноз к концу месяца', pct(month.forecast)],
       [closed ? 'К графику на отчётную дату' : 'К графику закрытых дней', sign(month.paceGap, '₽')]
     ];
     const kpis = [
       ['Товарооборот', kpi.to, '₽'], ['Валовая прибыль', kpi.vp, '₽'],
       ['Наценка', kpi.markup, '%'], ['Чеки', kpi.checks, 'шт.']
-    ];
-    const dayRows = [
-      ['Товарооборот', day.to, '₽'], ['Чеки', day.checks, 'шт.'],
-      ['Средний чек', day.avg, '₽'], ['Валовая прибыль', day.vp, '₽']
     ];
     const weakest = (closed
       ? [['ТО', day.to.achieved], ['чеки', day.checks.achieved], ['ВП', day.vp.achieved]]
@@ -88,47 +87,78 @@
       : `${closed ? 'Доступные итоги дня' : 'Темп по закрытым дням'} на уровне цели.`;
     if (!closed && day.checks.left === 0 && day.to.left > 0) summary = 'План по чекам достигнут. Для выполнения плана ТО нужны дополнительные чеки.';
 
-    const departmentLimit = 24;
-    const hasPlans = departments.some(row => R.valid(row.achieved));
-    const shareMode = !hasPlans;
-    const shareMax = Math.max(0, ...departments.map(row => row.share ?? 0));
-    const scale = shareMode && shareMax > 0 ? Math.ceil(shareMax / 5) * 5 : 100;
-    const shortDepartments = departments.slice(0, departmentLimit);
-    const departmentColumns = shortDepartments.length > 6
-      ? [shortDepartments.slice(0, Math.ceil(shortDepartments.length / 2)), shortDepartments.slice(Math.ceil(shortDepartments.length / 2))]
-      : [shortDepartments];
+    let fallbackFocus = [pace.to, pace.checks, sku?.gap, day.vp.achieved].some(R.valid)
+      ? 'По доступным данным значимых отклонений нет.' : 'Загрузите отчёты для определения приоритетов.';
+    if (!closed && day.checks.left > 0 && day.avg.left > 0) {
+      fallbackFocus = `До закрытия осталось пробить ${format(day.checks.left)} чеков со средним чеком ${format(day.avg.left)} ₽.`;
+    } else if (!closed && !R.valid(day.checks.fact) && day.checks.plan > 0 && day.avg.plan > 0) {
+      fallbackFocus = `Цель на день — ${format(day.checks.plan)} чеков со средним чеком ${format(day.avg.plan)} ₽.`;
+    }
     const reportNotes = notes.length ? `<p class="briefing-data-note">${notes.map(esc).join(' ')}</p>` : '';
     const sources = [...new Set(used.map(source => source.label))].join(' · ');
-    el('Sheet').classList.toggle('briefing-dense', shortDepartments.length > 18);
     el('Sheet').innerHTML = `
       <header class="briefing-report-head">
         <div><div class="briefing-report-brand">SOLDIE <span></span> ${esc(store.region || 'Управление магазином')}</div>
         <h2>Ежедневный брифинг</h2><p>${esc(store.name)}</p></div>
         <time datetime="${range.end}"><span>Отчётная дата</span><strong>${date(range.end)}</strong></time>
       </header>
+      <section class="briefing-today">
+        ${sectionTitle(closed ? 'План на день' : 'План на сегодня', closed ? 'День завершён' : time ? 'Данные на ' + time : 'День идёт · время среза неизвестно')}
+        <div class="briefing-daily-goals">
+          ${dailyGoal('Товарооборот', day.to, '₽', closed)}
+          ${dailyGoal('Чеки', day.checks, 'шт.', closed)}
+        </div>
+        <div class="briefing-daily-extra">
+          ${dailyDetail('Средний чек', day.avg, '₽', closed, true)}
+          ${dailyDetail('Валовая прибыль', day.vp, '₽', closed)}
+        </div>
+        <p class="briefing-day-summary">${summary}</p>
+      </section>
+      <section class="briefing-focus"><h3>Фокус дня</h3><div>${(focus.length ? focus : [fallbackFocus])
+        .map(item => `<p>${esc(item)}</p>`).join('')}</div></section>
       <section class="briefing-month">
         <div class="briefing-ring ${Math.abs(month.achieved) >= 1000 ? 'briefing-ring-long' : Math.abs(month.achieved) >= 100 ? 'briefing-ring-wide' : ''}" style="--progress:${width(month.achieved)}%" aria-label="Выполнение месяца ${R.valid(month.achieved) ? format(month.achieved, 1) + '%' : 'нет данных'}">
           <div><strong>${pct(month.achieved)}</strong><span>план месяца</span></div>
         </div>
         <div class="briefing-month-info">
-          ${sectionTitle('Положение за месяц', rangeLabel(range.monthStart, range.end))}
-          <dl>${monthCards.map(([label, value]) => labelValue(label, value)).join('')}</dl>
+          ${sectionTitle('Положение за месяц', forecastCutoff || rangeLabel(range.monthStart, range.end))}
+          <dl>${monthCards.map(([label, value, state]) => state ? `<div class="briefing-month-forecast ${state}"><dt>${label}</dt><dd>${value}</dd></div>` : labelValue(label, value)).join('')}</dl>
+          ${benchmark ? `<div class="briefing-competition" aria-label="${benchmark.monthClosed ? 'Рейтинг по итогу ТО' : 'Рейтинг по прогнозу ТО'}">
+            <div class="briefing-rank" title="Место среди магазинов с сопоставимыми данными в выгрузке"><span>${benchmark.country ? 'Место по РФ' : 'Место в сети'}</span>
+              <strong>${benchmark.rank} <small>из ${benchmark.count}</small></strong></div>
+            ${[['К сети', benchmark.network], ['К региону', benchmark.regional]].map(([label, reference]) => {
+              const gap = R.delta(benchmark.own, reference);
+              const state = R.valid(gap) ? gap > 0 ? 'good' : gap < 0 ? 'bad' : 'unknown' : 'unknown';
+              return `<div class="${state}" title="${label} ${pct(reference)}"><span>${label}</span><strong>${sign(gap, 'п. п.', 1)}</strong></div>`;
+            }).join('')}
+          </div>` : ''}
+
         </div>
       </section>
       <section class="briefing-kpi">
-        ${sectionTitle('Ключевые показатели', rangeLabel(range.start, range.end))}
-        <div class="briefing-kpi-grid">${kpis.map(([label, data, unit], index) => `
-          <div class="briefing-kpi-card ${tone(data.achieved)}">
+        ${sectionTitle(monthlyCards ? month.monthClosed ? 'Итоги месяца' : 'Прогноз до конца месяца' : 'Ключевые показатели', monthlyCards && forecastCutoff ? forecastCutoff : rangeLabel(range.start, range.end))}
+        <div class="briefing-kpi-grid">${kpis.map(([label, data, unit]) => {
+          const markup = unit === '%';
+          const value = monthlyCards ? data.forecast : markup ? data.fact : data.achieved;
+          const completion = monthlyCards && markup ? R.percent(value, data.plan) : monthlyCards ? value : data.achieved;
+          const color = tone(completion);
+          const difference = R.valid(data.difference) ? ' title="Факт к плану ' + sign(data.difference, markup ? 'п. п.' : unit, markup ? 1 : 0) + '"' : '';
+          return `<div class="briefing-kpi-card ${color}"${difference}>
             <h4>${label}</h4>
-            <strong>${index === 2 ? pct(data.fact) : pct(data.achieved)}</strong>
-            <div class="briefing-kpi-detail">План ${number(data.plan, unit, index === 2 ? 1 : 0)}</div>
-            <div class="briefing-kpi-detail">${index === 2 ? 'К плану ' + sign(data.difference, 'п. п.', 1) : 'Факт ' + number(data.fact, unit)}</div>
-            ${index === 1 || index === 3 ? `<div class="briefing-kpi-detail">К плану ${sign(data.difference, unit)}</div>` : ''}
-            ${progress(data.achieved, tone(data.achieved))}
-          </div>`).join('')}</div>
+            <strong>${pct(value)}</strong>
+            ${markup && R.valid(value) ? '' : `<span class="briefing-kpi-caption">${R.valid(value) ? 'от плана' : monthlyCards && !month.monthClosed ? 'Нет прогноза' : 'Нет данных'}</span>`}
+            <div class="briefing-kpi-detail">План ${number(data.plan, unit, markup ? 1 : 0)}<br>Факт ${number(data.fact, unit, markup ? 1 : 0)}</div>
+            ${progress(completion, color)}
+          </div>`;
+        }).join('')}</div>
       </section>
-      <div class="briefing-operations">
-        <section class="briefing-sku">
+      <section class="briefing-activity">
+        ${sectionTitle('План и факт по дням', rangeLabel(calendar[0].date, calendar.at(-1).date))}
+        <div class="briefing-legend"><span>План</span><span>Факт</span><span>Отчётная дата</span></div>
+        ${calendarChart(calendar, 'to', 'Товарооборот', '₽', range.end)}
+        ${calendarChart(calendar, 'checks', 'Чеки', 'шт.', range.end)}
+      </section>
+      <section class="briefing-sku">
           ${sectionTitle('3SKU', sku ? rangeLabel(sku.first, sku.last) : '')}
           ${sku ? `
             <div class="briefing-sku-hero"><div><strong>${pct(sku.factPenetration)}</strong><span>пенетрация</span></div>
@@ -140,48 +170,62 @@
             ${sku.items.length ? `<ul>${sku.items.slice(0, 3).map(row => `<li><span title="${esc(row.name)}">${esc(row.name)}</span><strong>${number(row.units, 'шт.', 1)}</strong></li>`).join('')}</ul>` : '<p>На отчётную дату нет активных SKU.</p>'}
             ${R.valid(sku.factPenetration) ? '' : '<p>Для пенетрации нужны продажи и чеки за весь период акции в срезе.</p>'}
           ` : '<p>Нет данных акции 3SKU для этого магазина и периода.</p>'}
-        </section>
-        <section class="briefing-today">
-          ${sectionTitle('Оперативный план дня', closed ? 'День завершён' : time ? 'Данные на ' + time : 'День идёт · время среза неизвестно')}
-          <table><thead><tr><th scope="col">Показатель</th><th scope="col">План дня</th><th scope="col">Факт</th><th scope="col">${closed ? 'Итог' : 'Осталось'}</th></tr></thead>
-          <tbody>${dayRows.map(([label, row, unit]) => `<tr><th scope="row">${label}</th><td>${number(row.plan, unit)}</td>
-            <td>${number(row.fact, unit)}</td><td class="${closed ? tone(row.achieved) : ''}">${closed ? pct(row.achieved) : number(row.left, unit)}</td></tr>`).join('')}</tbody></table>
-          <p class="briefing-day-summary">${summary}${!closed && R.valid(day.avg.left) ? ' В «Осталось» указан средний чек на оставшиеся чеки.' : ''}</p>
-        </section>
-      </div>
-      <section class="briefing-departments">
-        ${sectionTitle('Вклад отделов', shareMode && departments.length ? 'Доля в ТО · шкала до ' + pct(scale) : store.region ? esc(store.region) : '')}
-        ${departments.length ? `<div class="briefing-dept-grid ${departmentColumns.length > 1 ? 'briefing-two-cols' : ''}">${departmentColumns
-          .map(rows => departmentTable(rows, shareMode, tone, scale)).join('')}</div>
-          ${shortDepartments.length < departments.length ? `<p>На A4 показаны первые ${departmentLimit} из ${departments.length} отделов в выбранном порядке.</p>` : ''}
-          ${hasPlans ? '' : '<p>В выгрузке нет планов отделов. Выполнение и сравнение с регионом недоступны.</p>'}`
-          : '<p>Нет продаж по товарным группам за выбранный период.</p>'}
       </section>
-      <section class="briefing-focus"><h3>Фокус дня</h3><div>${(focus.length ? focus : [
-        [pace.to, pace.checks, sku?.gap, day.vp.achieved, ...departments.map(row => row.gap)].some(R.valid)
-          ? 'По доступным данным значимых отклонений нет.' : 'Загрузите отчёты для определения приоритетов.'
-      ]).map(text => `<p>${esc(text)}</p>`).join('')}</div></section>
       <footer class="briefing-foot">
         <span>${sources ? 'Источники · ' + esc(sources) : 'Источники не загружены'}</span>
         <span>— показатель недоступен</span>
         ${reportNotes}
       </footer>`;
     const supplementary = el('Sources');
-    supplementary.innerHTML = `<p>Наценка — ВП / себестоимость. Пенетрация 3SKU — продажи акционных единиц на 100 чеков. Дневная цель распределяется по сроку действия каждой позиции.</p>
+    supplementary.innerHTML = `<p>Место и отрыв рассчитаны по прогнозу выполнения плана ТО из одного среза. Сеть и регион взвешены по плану. Наценка — ВП / себестоимость. Пенетрация 3SKU — продажи акционных единиц на 100 чеков. Дневная цель распределяется по сроку действия каждой позиции.</p>
       ${used.length ? `<ul>${used.map(source => `<li>${esc(source.label)} · ${esc(source.name || 'Загруженный отчёт')}
         · ${source.period ? rangeLabel(source.period.start, source.period.end) : 'период не указан'}${source.time ? ', срез ' + source.time : ''}
-        · импорт ${dateTime(source.importedAt)}</li>`).join('')}</ul>` : '<p>Загрузите «Статистику расширенную» и «Рейтинг / план-факт» в Vision. Настройки акции и продажи берутся из 3SKU.</p>'}
-      ${shortDepartments.length < departments.length ? `<details><summary>Все отделы (${departments.length})</summary>${departmentTable(departments, shareMode, tone, scale)}</details>` : ''}`;
+        · импорт ${dateTime(source.importedAt)}</li>`).join('')}</ul>` : '<p>Загрузите «Статистику расширенную» и «Рейтинг / план-факт» в Vision. Настройки акции и продажи берутся из 3SKU.</p>'}`;
   }
 
-  function departmentTable(rows, shareMode, tone, scale) {
-    return `<table${shareMode ? ' class="briefing-dept-shares"' : ''}><thead><tr><th scope="col">Отдел</th><th scope="col">${shareMode ? 'Доля' : 'План, %'}</th>
-      ${shareMode ? '' : '<th scope="col">Регион</th><th scope="col">Δ, п. п.</th>'}</tr></thead><tbody>${rows.map(row => {
-      const value = shareMode ? row.share : row.achieved;
-      return `<tr><th scope="row" title="${esc(row.name)}"><span>${esc(row.name)}</span></th><td><div class="briefing-dept-value">
-        ${progress(R.percent(value, scale), shareMode ? 'share' : tone(value))}<strong>${pct(value)}</strong></div></td>
-        ${shareMode ? '' : `<td>${pct(row.regional)}</td><td>${sign(row.gap, '', 1)}</td>`}</tr>`;
-    }).join('')}</tbody></table>`;
+  function dailyGoal(label, row, unit, closed) {
+    return `<div class="briefing-day-goal">
+      <h4>${label}</h4>
+      <strong class="briefing-target">${number(row.plan, unit)}</strong>
+      ${progress(row.achieved, closed && !R.valid(row.achieved) ? 'unknown' : 'day-progress')}
+      <div class="briefing-day-result"><span>Факт <b>${number(row.fact, unit)}</b></span>
+        <span>${closed ? 'Итог' : 'Осталось'} <b>${closed ? pct(row.achieved) : number(row.left, unit)}</b></span></div>
+    </div>`;
+  }
+
+  function dailyDetail(label, row, unit, closed, average = false) {
+    const target = closed ? pct(row.achieved) : number(row.left, unit);
+    const targetLabel = closed ? 'Итог' : average ? 'Нужен на оставшиеся чеки' : 'Осталось';
+    return `<div class="briefing-day-detail"><h4>${label}</h4>
+      <span>План <b>${number(row.plan, unit)}</b></span><span>Факт <b>${number(row.fact, unit)}</b></span>
+      <span>${targetLabel} <b>${target}</b></span></div>`;
+  }
+
+  const compact = new Intl.NumberFormat('ru-RU', { notation: 'compact', maximumFractionDigits: 1 });
+  function calendarChart(calendar, metric, label, unit, selected) {
+    const values = calendar.flatMap(row => [row[metric].plan, row[metric].fact]).filter(R.valid);
+    if (!values.length) return `<div class="briefing-chart"><h4>${label}</h4><p>Нет дневных данных за этот период.</p></div>`;
+    const low = Math.min(0, ...values);
+    const high = Math.max(1, ...values);
+    const percentOfScale = value => value / (high - low) * 100;
+    const formatAxis = value => compact.format(value) + ' ' + unit;
+    return `<div class="briefing-chart">
+      <div class="briefing-chart-label"><h4>${label}</h4><span>Шкала ${formatAxis(low)} — ${formatAxis(high)}</span></div>
+      <div class="briefing-chart-days" style="--days:${calendar.length};--zero:${percentOfScale(-low)}%">
+        ${calendar.map(({ date: day, [metric]: point }, index) => {
+          const caption = `${date(day)} · план ${number(point.plan, unit)} · факт ${number(point.fact, unit)}`;
+          const showLabel = calendar.length <= 7 || day === selected || index === 0 || index === calendar.length - 1 ||
+            (index % 7 === 0 && index < calendar.length - 2);
+          return `<div class="briefing-chart-day${day === selected ? ' selected' : ''}" data-date="${day}" title="${caption}">
+            <div class="briefing-chart-bars">
+              ${['plan', 'fact'].map(kind => R.valid(point[kind])
+                ? `<i class="briefing-chart-bar ${kind}${point[kind] < 0 ? ' negative' : ''}${point[kind] === 0 ? ' zero' : ''}" style="--bar:${percentOfScale(Math.abs(point[kind]))}%"></i>` : '').join('')}
+            </div>
+            <span>${showLabel ? day.slice(-2) : ''}</span>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`;
   }
 
   function refresh(message = '') {
@@ -189,13 +233,11 @@
     const imports = BriefingData.sources();
     const stores = BriefingData.storesFrom(imports);
     const preferred = selectedStore || VisionMeeting.storeKey(VisionMeeting.selected());
-    const availableDate = imports.flatMap(source => [source.statsSource?.period?.end, source.planSource?.period?.end])
-      .filter(day => day && day <= today).sort().pop();
     el('Store').innerHTML = stores.length ? stores.map(store => `<option value="${esc(store.key)}">${esc(store.name)}</option>`).join('')
       : '<option value="">Нет загруженных магазинов</option>';
     el('Store').value = stores.find(store => store.key === preferred)?.key || stores[0]?.key || '';
     el('Date').max = today;
-    el('Date').value = selectedDate && selectedDate <= today ? selectedDate : availableDate || today;
+    el('Date').value = selectedDate && selectedDate <= today ? selectedDate : today;
     const positive = el('Good').valueAsNumber;
     const good = Math.max(0, Math.min(200, Number.isFinite(positive) ? positive : 100));
     const watch = Math.max(0, Math.min(good, Number.isFinite(el('Watch').valueAsNumber) ? el('Watch').valueAsNumber : 90));
@@ -204,23 +246,24 @@
     const store = stores.find(store => store.key === el('Store').value);
     const end = el('Date').value;
     const mode = el('Period').value;
-    const order = el('Sort').value;
+    const orientation = el('Orientation').value;
+    card.classList.toggle('briefing-landscape', orientation === 'landscape');
     const thresholds = { good, watch };
     const skuApi = window.sku3Api;
     const skuMatches = store && store.key !== 'магазин' && VisionMeeting.storeKey(skuApi?.getSettings().storeName) === store.key;
     const skuMetrics = skuMatches ? skuApi.computeMetrics() : null;
     const skuImports = skuMatches ? skuApi.getState().imports : [];
-    const view = BriefingData.build({ imports, stores, store: store || { key: '' }, end, today, mode, order, thresholds, skuMetrics, skuImports });
+    const view = BriefingData.build({ imports, store: store || { key: '' }, end, today, mode, thresholds, skuMetrics, skuImports });
     render(view, store || { name: 'Магазин не выбран' }, thresholds);
     document.title = store ? 'Ежедневный брифинг · ' + store.name + ' · ' + date(end) : 'Ежедневный брифинг · Soldie';
     el('Print').disabled = el('Pdf').disabled = !store;
     el('Status').textContent = message || (store ? '' : 'Загрузите отчёты в Vision, чтобы выбрать магазин.');
-    preferences = { store: selectedStore, end: selectedDate, mode, order, ...thresholds };
+    preferences = { store: selectedStore, end: selectedDate, mode, orientation, ...thresholds };
     try { localStorage.setItem(storage, JSON.stringify(preferences)); } catch { /* Report works without storage. */ }
   }
 
   function printReport() {
-    if (window.AndroidBridge?.printDailyBriefing) window.AndroidBridge.printDailyBriefing();
+    if (window.AndroidBridge?.printDailyBriefing) window.AndroidBridge.printDailyBriefing(el('Orientation').value === 'landscape');
     else window.print();
   }
   card.addEventListener('change', event => {

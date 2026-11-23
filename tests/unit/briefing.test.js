@@ -55,27 +55,27 @@ test('3SKU uses units per 100 checks and refuses incomplete numerator or denomin
   assert.equal(R.skuReport(metrics, day1, day2, new Set([day2])).day.fact, null);
 });
 
-test('regional completion is weighted over comparable plans and deduplicates stores and groups', () => {
-  const stores = [{ key: 'a', region: 'x' }, { key: 'a', region: 'x' }, { key: 'b', region: 'x' }, { key: 'c', region: 'y' }];
-  const own = { g: 'Посуда', code: '01', rev: 12, plan: 10 };
-  const args = { store: 'a', region: 'x', stores, keyOf: value => value.toLowerCase(), order: 'achieved' };
-  const rows = {
-    a: [own, own, { g: 'Сезон', rev: 5, plan: 10 }],
-    b: [{ ...own, rev: 180, plan: 200 }, { g: 'Сезон', rev: 100, plan: null }]
-  };
-  const [first, second] = R.departments({ ...args, rows });
-  assert.equal(first.achieved, 120);
-  assert.equal(first.regional, 19200 / 210);
-  assert.equal(first.gap, 120 - 19200 / 210);
-  assert.equal(second.regional, null);
-  assert.deepEqual(R.departments({ ...args, rows: { a: [own, { ...own, rev: 15 }] } })[0],
-    { name: 'Посуда', achieved: null, regional: null, gap: null, share: null });
-});
-
 test('priorities use significant, evidenced deviations and configurable thresholds', () => {
   const view = { pace: { to: 99, checks: 98 }, day: R.dayMetrics({}, {}, false), closed: false,
-    sku: { factPenetration: 3, target: 10 }, departments: [] };
+    sku: { factPenetration: 3, target: 10 } };
   assert.match(R.priorities(view, { good: 100, watch: 90 })[0], /3SKU/);
   assert.equal(R.priorities({ ...view, sku: null }, { good: 100, watch: 90 }).length, 0);
   assert.equal(R.priorities({ ...view, sku: null }, { good: 100, watch: 99 }).length, 1);
+});
+
+test('store ranking gives equal places and weights network and region by monthly plans', () => {
+  const rows = [
+    { key: 'a', region: 'x', result: 120, plan: 100 },
+    { key: 'b', region: 'x', result: 1080, plan: 1200 },
+    { key: 'c', region: 'y', result: 240, plan: 200 },
+    { key: 'd', region: 'y', result: 151, plan: 100 },
+    { key: 'excluded', result: 500, plan: null }
+  ];
+  assert.deepEqual(R.competition([...rows, rows[0]], 'a'), {
+    rank: 2, count: 4, own: 120, network: 159100 / 1600,
+    regional: 120000 / 1300, regionCount: 2
+  });
+  assert.equal(R.competition(rows, 'c').rank, 2);
+  assert.equal(R.competition(rows, 'excluded'), null);
+  assert.equal(R.competition(rows.slice(0, 1), 'a'), null);
 });

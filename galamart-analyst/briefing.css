@@ -124,7 +124,19 @@
 .briefing-month-info { min-width: 0; }
 .briefing-month-info dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 10px; margin-top: 11px !important; }
 .briefing-month-info dl > div { min-width: 0; border-top: 1px solid #efd9c9; padding-top: 7px; }
-.briefing-month-info dl > div:nth-child(3) dd { color: var(--br-orange-ink); }
+#briefingSheet .briefing-month-forecast dd { color: var(--br-tone); font-size: 1.65em; }
+.briefing-competition {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+  margin-top: 6px;
+}
+.briefing-competition > div { display: grid; align-content: center; padding: 3px 6px; border-radius: 5px; background: #fff; }
+.briefing-competition span { color: var(--br-muted); font-size: .72em; }
+.briefing-competition strong { font-size: 1.1em; line-height: 1.15; }
+.briefing-competition small { font-size: .72em; font-weight: 600; }
+.briefing-competition .briefing-rank { background: #ffe8d9; color: var(--br-orange-ink); }
+.briefing-rank strong { font-size: 1.35em; }
 #briefingSheet dt { color: var(--br-muted); font-size: .79em; }
 .briefing-month-info dd { font-size: 1.4em; line-height: 1.16; font-weight: 765; }
 .briefing-kpi-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 7px; }
@@ -135,21 +147,85 @@
   min-width: 0;
   padding: 8px 10px;
   border: 1px solid var(--br-line);
+  border-top: 3px solid var(--br-tone, var(--br-line));
   border-radius: 8px;
 }
 .briefing-kpi-card h4 { color: var(--br-muted); font-size: .84em; }
-.briefing-kpi-card > strong { font-size: 1.7em; line-height: 1.12; letter-spacing: -.04em; }
-.briefing-kpi-detail { font-size: .76em; color: var(--br-muted); }
+.briefing-kpi-card > strong { font-size: 2em; line-height: 1.08; letter-spacing: -.045em; }
+.briefing-kpi-card.good { background: #e5f4e9; }
+.briefing-kpi-card.watch { background: #fff1cd; }
+.briefing-kpi-card.bad { background: #fde8e6; }
+.briefing-kpi-card.unknown { background: #f5f2ee; }
+.briefing-kpi-caption { font-size: .73em; line-height: 1.05; }
+.briefing-kpi-detail { margin-top: auto; font-size: .76em; color: var(--br-muted); }
 #briefingSheet .good { --br-tone: var(--br-good); color: var(--br-good); }
 #briefingSheet .watch { --br-tone: var(--br-watch); color: var(--br-watch); }
 #briefingSheet .bad { --br-tone: var(--br-bad); color: var(--br-bad); }
 #briefingSheet .unknown { --br-tone: #73665f; color: #73665f; }
 .briefing-progress { display: block; min-width: 0; height: 5px; border-radius: 5px; background: #eee5df; }
 .briefing-progress i { display: block; height: 100%; border-radius: inherit; background: var(--br-tone, var(--br-orange)); }
-.briefing-kpi-card .briefing-progress { margin-top: auto; translate: 0 2px; }
-.briefing-operations { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.62fr); gap: 10px; }
-.briefing-operations > section, .briefing-departments { min-width: 0; padding: 10px; border: 1px solid var(--br-line); border-radius: 9px; }
-.briefing-operations h3, .briefing-departments h3 { margin-bottom: 4px !important; }
+.briefing-kpi-card .briefing-progress { height: 4px; margin-top: 2px; }
+#briefingSheet { grid-template-columns: minmax(0, 1fr); }
+.briefing-report-head { grid-area: head; }
+.briefing-today { grid-area: today; }
+.briefing-focus { grid-area: focus; }
+.briefing-month { grid-area: month; }
+.briefing-kpi { grid-area: kpi; }
+.briefing-activity { grid-area: activity; }
+.briefing-sku { grid-area: sku; }
+.briefing-foot { grid-area: foot; }
+#briefingSheet { grid-template-areas: "head" "today" "focus" "month" "kpi" "activity" "sku" "foot"; }
+.briefing-today, .briefing-activity, .briefing-sku {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--br-line);
+  border-radius: 9px;
+}
+.briefing-today {
+  border-color: #f1c4aa;
+  background: #fff1e5;
+}
+#briefingSheet .briefing-today h3 { font-size: 1.62em; letter-spacing: -.035em; }
+.briefing-daily-goals, .briefing-daily-extra {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  margin-top: 6px;
+}
+.briefing-day-goal {
+  display: grid;
+  gap: 3px;
+  padding: 7px 9px;
+  background: #fff;
+  border-radius: 7px;
+  border-top: 3px solid var(--br-orange);
+}
+.briefing-day-goal h4, .briefing-day-detail h4 { font-size: .84em; }
+.briefing-target {
+  color: var(--br-orange-ink);
+  font-size: 2em;
+  line-height: 1.05;
+  letter-spacing: -.045em;
+  overflow-wrap: anywhere;
+}
+.briefing-day-result, .briefing-day-detail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  color: var(--br-muted);
+  font-size: .78em;
+}
+.briefing-day-result { justify-content: space-between; }
+.briefing-day-detail {
+  background: #fff9f4;
+  padding: 5px 7px;
+  border-radius: 5px;
+}
+.briefing-day-detail h4 { width: 100%; color: var(--br-ink); font-size: 1em; }
+.briefing-day-result b, .briefing-day-detail b { color: var(--br-ink); }
+.briefing-day-goal .briefing-progress { height: 7px; }
+.briefing-day-summary { color: var(--br-orange-ink); font-size: .77em; margin-top: 5px !important; }
 .briefing-sku-hero { display: flex; justify-content: space-between; gap: 5px; align-items: center; color: var(--br-orange-ink); }
 .briefing-sku-hero strong { display: block; font-size: 1.7em; line-height: 1.05; }
 .briefing-sku-hero span, .briefing-sku-hero div:last-child { font-size: .8em; }
@@ -158,36 +234,60 @@
 .briefing-sku ul { padding: 4px 0 0; list-style: none; }
 .briefing-sku li { display: flex; justify-content: space-between; align-items: baseline; gap: 5px; font-size: .8em; padding: 2px 0; }
 .briefing-sku li span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.briefing-sku p, .briefing-departments p { font-size: .79em; color: var(--br-muted); margin-top: 4px !important; }
-#briefingSheet table, #briefingSources table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
-#briefingSheet :is(td, th), #briefingSources :is(td, th) { padding: 4px 4px; text-align: right; }
-#briefingSheet th:first-child, #briefingSources th:first-child { text-align: left; }
-#briefingSheet thead { position: static; box-shadow: none; color: var(--br-muted); background: #f9f3ef; }
-#briefingSheet tbody tr + tr { border-top: 1px solid #f0e7e1; }
-.briefing-today table { font-size: .83em; }
-.briefing-today th[scope="row"] { font-weight: 600; }
-.briefing-today td:last-child { font-weight: 740; }
-.briefing-day-summary {
-  font-size: .79em;
-  color: var(--br-orange-ink);
-  margin-top: 6px !important;
-  padding: 5px 7px;
-  background: #fff1e8;
-  border-radius: 4px;
+.briefing-sku p, .briefing-chart p { font-size: .79em; color: var(--br-muted); margin-top: 4px !important; }
+.briefing-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 4px;
+  font-size: .75em;
+  color: var(--br-muted);
 }
-.briefing-dept-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
-.briefing-two-cols { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.briefing-dept-grid table { table-layout: fixed; font-size: .8em; }
-.briefing-dept-grid th:first-child { width: 43%; }
-.briefing-dept-grid th:nth-child(2) { width: 26%; }
-.briefing-dept-grid th:nth-child(3) { width: 16%; }
-.briefing-dept-grid th:last-child { width: 15%; }
-.briefing-dept-grid .briefing-dept-shares th:first-child { width: 65%; }
-.briefing-dept-grid .briefing-dept-shares th:last-child { width: 35%; }
-#briefingSheet .briefing-dept-grid :is(th, td) { padding: 2px 3px; }
-.briefing-dept-grid th[scope="row"] { font-weight: 630; line-height: 1.14; overflow-wrap: anywhere; white-space: normal; }
-.briefing-dept-value { display: grid; grid-template-columns: minmax(0, 1fr) max-content; align-items: center; gap: 3px; }
-.briefing-dept-value strong { min-width: 2.8em; }
+.briefing-legend span::before {
+  content: "";
+  display: inline-block;
+  width: .8em;
+  height: .66em;
+  margin-right: .34em;
+  border-radius: 2px;
+  background: #dcb69d;
+}
+.briefing-legend span:nth-child(2)::before { background: var(--br-orange); }
+.briefing-legend span:nth-child(3)::before { background: #fff1e2; outline: 1px solid #ca8255; }
+.briefing-chart { margin-top: 6px; }
+.briefing-chart-label { display: flex; justify-content: space-between; align-items: baseline; gap: 4px; }
+.briefing-chart h4 { font-size: .82em; }
+.briefing-chart-label span { color: var(--br-muted); font-size: .69em; }
+.briefing-chart-days {
+  --plot-height: 76px;
+  display: grid;
+  grid-template-columns: repeat(var(--days), minmax(0, 1fr));
+  gap: 2px;
+}
+.briefing-chart-day { min-width: 0; text-align: center; }
+.briefing-chart-day.selected {
+  border-radius: 3px;
+  background: #fff1e2;
+  outline: 1px solid #ca8255;
+}
+.briefing-chart-day span { display: block; min-height: 1.3em; font-size: .68em; color: var(--br-muted); }
+.briefing-chart-day.selected span { color: var(--br-orange-ink); font-weight: 800; }
+.briefing-chart-bars {
+  position: relative;
+  height: var(--plot-height);
+  background: repeating-linear-gradient(to top, #eaddd2 0 1px, transparent 1px 25%);
+}
+.briefing-chart-bar {
+  position: absolute;
+  bottom: var(--zero);
+  width: calc(50% - 1px);
+  height: var(--bar);
+  border-radius: 2px 2px 0 0;
+}
+.briefing-chart-bar.plan { right: 50%; background: #dcb69d; }
+.briefing-chart-bar.fact { left: calc(50% + 1px); background: var(--br-orange); }
+.briefing-chart-bar.negative { top: calc(100% - var(--zero)); bottom: auto; border-radius: 0 0 2px 2px; }
+.briefing-chart-bar.zero { height: 1px; }
 .briefing-focus {
   display: grid;
   grid-template-columns: max-content 1fr;
@@ -210,75 +310,88 @@
 }
 .briefing-data-note { width: 100%; color: var(--br-orange-ink); }
 .briefing-preview .briefing-stage { overflow-x: auto; padding-bottom: 10px; }
-.briefing-preview #briefingSheet { width: 210mm; min-height: 297mm; margin-inline: auto; align-content: start; border-radius: 0; }
-@media screen and (max-width: 1080px) {
-  #briefingCard:not(.briefing-preview) .briefing-month-info dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.briefing-preview #briefingSheet {
+  width: 210mm;
+  min-height: 297mm;
+  margin-inline: auto;
+  align-content: start;
+  border-radius: 0;
+}
+.briefing-preview.briefing-landscape #briefingSheet { width: 297mm; min-height: 210mm; }
+@media screen and (min-width: 760px) {
+  #briefingCard:not(.briefing-landscape) #briefingSheet {
+    grid-template-columns: minmax(0, 2.15fr) minmax(0, 1fr);
+    grid-template-areas: "head head" "today today" "focus focus" "month month" "kpi kpi" "activity sku" "foot foot";
+  }
+}
+.briefing-preview #briefingSheet {
+  padding: 7mm;
+  gap: 9px;
+  font-size: 13px;
+  grid-template-columns: minmax(0, 2.15fr) minmax(0, 1fr);
+  grid-template-areas: "head head" "today today" "focus focus" "month month" "kpi kpi" "activity sku" "foot foot";
+}
+.briefing-preview .briefing-ring { --ring-size: 132px; }
+.briefing-preview .briefing-month { gap: 20px; padding-inline: 17px; }
+.briefing-preview.briefing-landscape #briefingSheet {
+  grid-template-columns: minmax(0, 1.52fr) minmax(0, 1.02fr) minmax(0, .72fr);
+  grid-template-areas: "head head head" "today month month" "focus focus focus" "activity kpi sku" "foot foot foot";
+}
+.briefing-preview.briefing-landscape .briefing-ring { --ring-size: 106px; font-size: .83em; }
+.briefing-preview.briefing-landscape .briefing-month { gap: 12px; padding-inline: 12px; }
+.briefing-preview.briefing-landscape .briefing-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media screen and (min-width: 1120px) {
+  .briefing-landscape:not(.briefing-preview) #briefingSheet {
+    grid-template-columns: minmax(0, 1.52fr) minmax(0, 1.02fr) minmax(0, .72fr);
+    grid-template-areas: "head head head" "today month month" "focus focus focus" "activity kpi sku" "foot foot foot";
+  }
+  .briefing-landscape:not(.briefing-preview) .briefing-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .briefing-landscape:not(.briefing-preview) .briefing-ring { --ring-size: 110px; font-size: .85em; }
+  .briefing-landscape:not(.briefing-preview) .briefing-month { gap: 12px; padding-inline: 13px; }
 }
 @media screen and (max-width: 650px) {
-  #briefingCard:not(.briefing-preview) #briefingSheet { padding: 12px; gap: 12px; }
+  #briefingCard:not(.briefing-preview) #briefingSheet { padding: 12px; gap: 10px; }
   #briefingCard:not(.briefing-preview) .briefing-report-head h2 { font-size: 1.55em; }
   #briefingCard:not(.briefing-preview) .briefing-month { grid-template-columns: 1fr; justify-items: center; gap: 10px; }
   #briefingCard:not(.briefing-preview) .briefing-month-info { width: 100%; }
-  #briefingCard:not(.briefing-preview) .briefing-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  #briefingCard:not(.briefing-preview) .briefing-operations,
-  #briefingCard:not(.briefing-preview) .briefing-two-cols { grid-template-columns: 1fr; }
+  #briefingCard:not(.briefing-preview) .briefing-kpi-grid,
+  #briefingCard:not(.briefing-preview) .briefing-month-info dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #briefingCard:not(.briefing-preview) .briefing-target { font-size: 1.6em; }
 }
-.briefing-preview #briefingSheet { padding: 8mm; }
-@page dailyBriefing { size: A4 portrait; margin: 0; }
+@page dailyBriefingPortrait { size: A4 portrait; margin: 0; }
+@page dailyBriefingLandscape { size: A4 landscape; margin: 0; }
 @media print {
   body.briefing-active { background: #fff !important; }
   body.briefing-active > :not(.su-main),
   body.briefing-active .su-main > :not(#briefingCard),
   body.briefing-active .briefing-controls { display: none !important; }
   body.briefing-active .su-main { padding: 0 !important; margin: 0 !important; width: 100% !important; }
-  body.briefing-active #briefingCard { page: dailyBriefing; max-width: none; margin: 0; }
+  body.briefing-active #briefingCard { page: dailyBriefingPortrait; max-width: none; margin: 0; }
+  body.briefing-active #briefingCard.briefing-landscape { page: dailyBriefingLandscape; }
   body.briefing-active .briefing-stage { overflow: visible; padding: 0; }
   body.briefing-active #briefingSheet {
     width: 210mm;
     min-height: 0;
-    padding: 8mm;
+    padding: 7mm;
+    gap: 9px;
+    font-size: 13px;
     margin: 0;
+    grid-template-columns: minmax(0, 2.15fr) minmax(0, 1fr);
+    grid-template-areas: "head head" "today today" "focus focus" "month month" "kpi kpi" "activity sku" "foot foot";
     border-radius: 0;
     box-shadow: none;
     break-inside: avoid;
     print-color-adjust: exact;
     -webkit-print-color-adjust: exact;
   }
-}
-.briefing-preview #briefingSheet { gap: 10px; font-size: 13px; }
-.briefing-preview .briefing-ring { --ring-size: 145px; }
-.briefing-preview .briefing-month { gap: 28px; padding-inline: 24px; }
-@media print {
-  body.briefing-active #briefingSheet { gap: 10px; font-size: 13px; }
-  body.briefing-active .briefing-ring { --ring-size: 145px; }
-  body.briefing-active .briefing-month { gap: 28px; padding-inline: 24px; }
-}
-
-.briefing-preview #briefingSheet.briefing-dense { gap: 7px; }
-.briefing-preview .briefing-dense .briefing-month { padding-block: 8px; }
-.briefing-preview .briefing-dense .briefing-ring { --ring-size: 129px; font-size: .94em; }
-.briefing-preview .briefing-dense .briefing-kpi-card { padding-block: 6px; }
-.briefing-preview #briefingSheet.briefing-dense .briefing-today :is(th, td) { padding-block: 3px; }
-.briefing-preview #briefingSheet.briefing-dense .briefing-dept-grid :is(th, td) { padding-block: 0; }
-.briefing-preview .briefing-dense .briefing-dept-grid th[scope="row"] span { line-height: 1.05; }
-.briefing-preview .briefing-dept-grid th[scope="row"] span {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-@media print {
-  body.briefing-active #briefingSheet.briefing-dense { gap: 7px; }
-  body.briefing-active .briefing-dense .briefing-month { padding-block: 8px; }
-  body.briefing-active .briefing-dense .briefing-ring { --ring-size: 129px; font-size: .94em; }
-  body.briefing-active .briefing-dense .briefing-kpi-card { padding-block: 6px; }
-  body.briefing-active #briefingSheet.briefing-dense .briefing-today :is(th, td) { padding-block: 3px; }
-  body.briefing-active #briefingSheet.briefing-dense .briefing-dept-grid :is(th, td) { padding-block: 0; }
-  body.briefing-active .briefing-dense .briefing-dept-grid th[scope="row"] span { line-height: 1.05; }
-  body.briefing-active .briefing-dept-grid th[scope="row"] span {
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
+  body.briefing-active .briefing-ring { --ring-size: 132px; }
+  body.briefing-active .briefing-month { gap: 20px; padding-inline: 17px; }
+  body.briefing-active #briefingCard.briefing-landscape #briefingSheet {
+    width: 297mm;
+    grid-template-columns: minmax(0, 1.52fr) minmax(0, 1.02fr) minmax(0, .72fr);
+    grid-template-areas: "head head head" "today month month" "focus focus focus" "activity kpi sku" "foot foot foot";
   }
+  body.briefing-active .briefing-landscape .briefing-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  body.briefing-active .briefing-landscape .briefing-ring { --ring-size: 106px; font-size: .83em; }
+  body.briefing-active .briefing-landscape .briefing-month { gap: 12px; padding-inline: 12px; }
 }
