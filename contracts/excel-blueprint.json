@@ -1,0 +1,625 @@
+{
+  "schema_version": "1.0.0",
+  "title": "Контракт чтения Excel-отчёта по кураторам",
+  "status": "Проверен на одном исходном файле. Правила для следующих выпусков требуют подтверждения на новых образцах.",
+  "read_first": [
+    "Для новой реализации прочитайте source, worksheet, row_contract, column_contract и parsing_workflow. excel-columns.json — справочник по буквам Excel. Читайте только нужные столбцы.",
+    "Выбирайте уровень строки перед расчётом. Один и тот же показатель присутствует на нескольких уровнях. Для итога сети используйте network_total, для итога магазина — store_total.",
+    "В книге один товарный уровень — категория в E. Поля «подгруппа», «подподгруппа», товарный SKU и идентификатор магазина в книге отсутствуют. Количество SKU — показатель.",
+    "source и expected_profile фиксируют именно изученный файл. Бизнес-имена полей служат интерфейсом парсера. Пояснения об основаниях и неопределённости помещены в соответствующие правила."
+  ],
+  "source": {
+    "filename": "Отчет по кураторам_44-47 нед._ноя.26.xlsx",
+    "bytes": 18944892,
+    "sha256": "c70786a3e98d0f512c78918f47ed10b3d90bcee3282963fb83848b8269bd4498",
+    "format": "xlsx",
+    "worksheet_xml_uncompressed_bytes": 125600216,
+    "coverage": "Потоковая проверка всех физических строк и ячеек листа. Сверка всех ключей и родителей по B:E, заголовков, объединений, видимости, типов и наличия значений. Контрольные суммы для отдельных столбцов ТО и сверка FR:FW с недельным блоком чеков."
+  },
+  "worksheet": {
+    "name": "Кураторам",
+    "sheet_count": 1,
+    "observed_xml_part": "xl/worksheets/sheet1.xml",
+    "dimension": "A1:KZ12331",
+    "column_count": 312,
+    "frozen_at": "L8",
+    "header_rows": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "physical_empty_rows": [
+      5,
+      7
+    ],
+    "absent_rows": [
+      31
+    ],
+    "date_system": "excel_1900",
+    "merged_cells_count": 209,
+    "metadata": {
+      "report_week": {
+        "label_cell": "E1",
+        "label": "Текущая неделя:",
+        "cell": "F1",
+        "value": 47
+      },
+      "as_of_date": {
+        "label_cell": "E2",
+        "label": "Данные на дату:",
+        "cell": "F2",
+        "value": "2026-11-22",
+        "excel_serial": 46348
+      }
+    }
+  },
+  "row_contract": {
+    "recognition": "Проверяйте классы сверху вниз по значениям B:E и по блоку. Пустая ячейка — отсутствие значения после декодирования. Для строк детализации B:D повторяются явно. Сверяйте outlineLevel как независимую проверку. hidden — свойство отображения.",
+    "kinds": [
+      {
+        "id": "network_total",
+        "examples": [
+          32
+        ],
+        "outline_level": 0,
+        "count": 1,
+        "note": "Основная строка сетевого итога.",
+        "predicates": {
+          "empty_cells": [
+            "B"
+          ],
+          "required_text_cells": [],
+          "literal_cells": {
+            "C": "Итого",
+            "D": "Итоги",
+            "E": "СЕТЬ"
+          }
+        }
+      },
+      {
+        "id": "network_total_repeat",
+        "examples": [
+          6
+        ],
+        "outline_level": 0,
+        "count": 1,
+        "note": "Сохранять для аудита по необходимости. J:K и L:KZ совпадают со строкой 32, включая пропуски.",
+        "predicates": {
+          "empty_cells": [
+            "B",
+            "C"
+          ],
+          "required_text_cells": [],
+          "literal_cells": {
+            "D": "Итоги",
+            "E": "СЕТЬ"
+          }
+        }
+      },
+      {
+        "id": "network_category",
+        "examples": [
+          8,
+          30
+        ],
+        "observed_rows": "8:30",
+        "outline_level": 0,
+        "count": 23,
+        "logical_key": [
+          "category"
+        ],
+        "note": "Сетевой срез категории. Маркер LFL сохраняйте как текст источника. Точный состав выборки по одному маркеру не определяется.",
+        "predicates": {
+          "empty_cells": [
+            "B",
+            "C",
+            "D"
+          ],
+          "required_text_cells": [
+            "E"
+          ],
+          "literal_cells": {
+            "F": "LFL"
+          }
+        }
+      },
+      {
+        "id": "district_total",
+        "examples": [
+          33,
+          7417,
+          7440
+        ],
+        "outline_level": 0,
+        "count": 9,
+        "logical_key": [
+          "district"
+        ],
+        "predicates": {
+          "empty_cells": [
+            "C",
+            "D",
+            "E"
+          ],
+          "required_text_cells": [
+            "B"
+          ],
+          "literal_cells": {}
+        }
+      },
+      {
+        "id": "curator_total",
+        "examples": [
+          34,
+          5801,
+          7418
+        ],
+        "outline_level": 1,
+        "count": 48,
+        "logical_key": [
+          "district",
+          "curator_bucket"
+        ],
+        "predicates": {
+          "empty_cells": [
+            "D",
+            "E"
+          ],
+          "required_text_cells": [
+            "B",
+            "C"
+          ],
+          "literal_cells": {}
+        }
+      },
+      {
+        "id": "store_total",
+        "examples": [
+          35,
+          5802,
+          7419,
+          9638
+        ],
+        "outline_level": 2,
+        "count": 504,
+        "logical_key": [
+          "district",
+          "curator_bucket",
+          "store_name"
+        ],
+        "predicates": {
+          "empty_cells": [
+            "E"
+          ],
+          "required_text_cells": [
+            "B",
+            "C",
+            "D"
+          ],
+          "literal_cells": {}
+        }
+      },
+      {
+        "id": "store_category",
+        "examples": [
+          36,
+          12331
+        ],
+        "outline_level": 3,
+        "hidden": true,
+        "count": 11738,
+        "logical_key": [
+          "district",
+          "curator_bucket",
+          "store_name",
+          "category"
+        ],
+        "predicates": {
+          "empty_cells": [],
+          "required_text_cells": [
+            "B",
+            "C",
+            "D",
+            "E"
+          ],
+          "literal_cells": {}
+        }
+      }
+    ],
+    "dimension_columns": {
+      "A": {
+        "role": "unused"
+      },
+      "B": {
+        "field": "district",
+        "type": "text",
+        "note": "Округ или специальная группа. Ф ФР и Справочно (вне округов) — реальные значения."
+      },
+      "C": {
+        "field": "curator_bucket",
+        "type": "text",
+        "note": "Подгруппа внутри B. Метки включают географические названия, Без куратора и Нет Старшего УМ."
+      },
+      "D": {
+        "field": "store_name",
+        "type": "text",
+        "note": "Название магазина или служебное слово Итоги. Отдельный код магазина отсутствует."
+      },
+      "E": {
+        "field": "category",
+        "type": "text",
+        "note": "Товарная категория или маркер СЕТЬ в сетевых итогах. Сохраняйте исходные пробелы, регистр и ё."
+      },
+      "F": {
+        "field": "store_lfl_flag_raw",
+        "type": "number_on_store_total",
+        "observed_values": [
+          0,
+          1
+        ],
+        "note": "На store_total числовой признак. На строках 8:30 и 32 текст LFL. На строках 1:2 метаданные отчёта. Отсутствие F у store_category сохраняется."
+      },
+      "G": {
+        "field": "store_format",
+        "type": "text",
+        "observed_values": [
+          "0",
+          "1",
+          "2",
+          "3",
+          "4",
+          "Мини",
+          "НАНО"
+        ],
+        "nullable": true,
+        "note": "Маркер Формат на строке 32. Числовые на вид значения в строках магазинов хранятся как строки."
+      },
+      "H": {
+        "role": "unused"
+      },
+      "I": {
+        "role": "unused"
+      },
+      "J": {
+        "field": "sales_area_m2",
+        "label_cell": "J3",
+        "type": "decimal",
+        "nullable": true
+      },
+      "K": {
+        "field": "average_sales_area_m2",
+        "label_cell": "K3",
+        "type": "decimal",
+        "nullable": true
+      }
+    },
+    "relationships": [
+      "district_total → curator_total по B. curator_total → store_total по B:C. store_total → store_category по B:D. Категория E добавляет уровень к ключу магазина.",
+      "В этом файле все 504 родителя магазина стоят прямо перед своим непрерывным блоком категорий. Сопоставление делайте по явным ключам с проверкой порядка.",
+      "Для обогащения категории форматом, площадью или LFL используйте соединение с итоговой строкой по B:D и отдельные поля источника для унаследованных значений. Пустые поля исходной строки оставляйте пустыми.",
+      "D уникален среди итогов магазинов в образце. Для связи внутри файла используйте B:D, для связывания между выпусками потребуется внешний справочник или проверенная схема сопоставления."
+    ],
+    "aggregation": [
+      "Для одного запроса используйте один уровень агрегации. Суммирование строк магазина вместе с его категориями или сетевыми и региональными итогами даёт повторный учёт.",
+      "Сетевой итог берите из network_total. Ф ФР и Справочно (вне округов) остаются доступными по собственным ключам. Например, Y32 совпадает в пределах 0,01 тыс. руб. с суммой семи обычных округов и Справочно (вне округов), исключая Ф ФР. Состав выборки для других показателей проверяйте отдельно.",
+      "Для ТО возможны небольшие расхождения при суммировании уже округлённых строк. В образце максимум разницы между Y магазина и суммой Y его категорий около 0,04 тыс. руб. Точный бизнес-допуск для других показателей требует отдельного согласования.",
+      "Доли, наценки, средние, прогнозы, сравнения, LFL, количество уникальных SKU и удельные показатели берите с нужного уровня отчёта. Для пересчёта нужны подтверждённые формулы и знаменатели."
+    ]
+  },
+  "column_contract": {
+    "catalog_file": "excel-columns.json",
+    "catalog_lookup": "columns[буква Excel]",
+    "metric_groups": {
+      "turnover": {
+        "columns": "L:AA",
+        "merge": "L1:AA1",
+        "label": "ТО, тыс. руб.",
+        "base_unit": "thousand_rub"
+      },
+      "turnover_at_cost": {
+        "columns": "AC:AP",
+        "merge": "AC1:AP1",
+        "label": "ТО СС, тыс. руб.",
+        "base_unit": "thousand_rub"
+      },
+      "gross_profit": {
+        "columns": "AR:BG",
+        "merge": "AR1:BG1",
+        "label": "ВП, тыс. руб.",
+        "base_unit": "thousand_rub"
+      },
+      "gross_profit_per_receipt": {
+        "columns": "BI:BT",
+        "merge": "BI1:BT1",
+        "label": "ВП на Чек, руб.",
+        "base_unit": "rub_per_receipt"
+      },
+      "markup_reported": {
+        "columns": "BV:CI",
+        "merge": "BV1:CI1",
+        "label": "Наценка, %",
+        "base_unit": "ratio"
+      },
+      "units_sold": {
+        "columns": "CK:CW",
+        "merge": "CK1:CW1",
+        "label": "ТО, шт.",
+        "base_unit": "pieces"
+      },
+      "sku_count": {
+        "columns": "CY:DK",
+        "merge": "CY1:DK1",
+        "label": "Количество, SKU",
+        "base_unit": "sku"
+      },
+      "average_unit_price": {
+        "columns": "DM:DZ",
+        "merge": "DM1:DZ1",
+        "label": "Ср. цена ШТ, руб.",
+        "base_unit": "rub_per_piece"
+      },
+      "average_price_structure": {
+        "columns": "EB:EK",
+        "merge": "EB1:EK1",
+        "label": "Структура ср. цены, руб.",
+        "base_unit": "rub_as_labeled"
+      },
+      "turnover_per_sku": {
+        "columns": "EM:EX",
+        "merge": "EM1:EX1",
+        "label": "ТО на  SKU, руб.",
+        "base_unit": "rub_per_sku"
+      },
+      "receipt_count": {
+        "columns": "EZ:FP",
+        "merge": "EZ1:FP1",
+        "label": "Количество Чеков, шт.",
+        "base_unit": "receipts"
+      },
+      "receipt_count_daily_average_observed": {
+        "columns": "FR:FW",
+        "merge": "FR1:FW1",
+        "label": null,
+        "base_unit": "receipts_per_day_observed",
+        "evidence": "Во всех 12324 строках FR:FU совпадает с соответствующим FJ:FM / 7 после округления до сотых. FV/FW повторяют FN/FO, включая пропуски. Печатное бизнес-название блока отсутствует."
+      },
+      "average_receipt_value": {
+        "columns": "FY:GO",
+        "merge": "FY1:GO1",
+        "label": "Средний чек, руб.",
+        "base_unit": "rub_per_receipt"
+      },
+      "average_units_per_receipt": {
+        "columns": "GQ:HD",
+        "merge": "GQ1:HD1",
+        "label": "Ср. кол-во штук в чеке",
+        "base_unit": "pieces_per_receipt"
+      },
+      "avg_daily_stock_units": {
+        "columns": "HF:HP",
+        "merge": "HF1:HP1",
+        "label": "Среднедневные остатки в магазине, шт.",
+        "base_unit": "pieces"
+      },
+      "avg_daily_stock_skus": {
+        "columns": "HR:IB",
+        "merge": "HR1:IB1",
+        "label": "Среднедневные остатки в магазине SKU, шт.",
+        "base_unit": "sku"
+      },
+      "avg_daily_stock_at_cost": {
+        "columns": "ID:IN",
+        "merge": "ID1:IN1",
+        "label": "Среднедневные остатки в магазине по СС, тыс. руб.",
+        "base_unit": "thousand_rub"
+      },
+      "turnover_per_sales_area": {
+        "columns": "IP:JA",
+        "merge": "IP1:JA1",
+        "label": "ТО, руб. на 1 м2 торг. пл.",
+        "base_unit": "rub_per_square_meter"
+      },
+      "avg_daily_stock_units_per_sales_area": {
+        "columns": "JC:JM",
+        "merge": "JC1:JM1",
+        "label": "Среднедневные остатки в магазине ШТ. на 1 м2 торг. пл.",
+        "base_unit": "pieces_per_square_meter"
+      },
+      "avg_daily_stock_skus_per_sales_area": {
+        "columns": "JO:JY",
+        "merge": "JO1:JY1",
+        "label": "Среднедневные остатки в магазине SKU шт на м2 торг. пл.",
+        "base_unit": "sku_per_square_meter"
+      },
+      "avg_daily_stock_at_cost_per_sales_area": {
+        "columns": "KA:KK",
+        "merge": "KA1:KK1",
+        "label": "Среднедневные остатки в магазине в СС, руб. на м2 торг. пл",
+        "base_unit": "rub_per_square_meter"
+      },
+      "penetration_reported": {
+        "columns": "KM:KQ",
+        "merge": "KM1:KQ1",
+        "label": "Пенетрация, %",
+        "base_unit": "ratio"
+      },
+      "non_selling_sku_share": {
+        "columns": "KS:KU",
+        "merge": "KS1:KU1",
+        "label": "Непродажи SKU, %",
+        "base_unit": "ratio"
+      },
+      "non_selling_stock_cost_share": {
+        "columns": "KW:KY",
+        "merge": "KW1:KY1",
+        "label": "Непродажи, % остатка по СС",
+        "base_unit": "ratio"
+      }
+    },
+    "header_rules": [
+      "Строка 1 задаёт группу для L:KZ с помощью горизонтальных объединений. FR1:FW1 — отдельный объединённый блок без собственного текста. Значения FR:FU соответствуют среднему дневному количеству чеков. Имя выведено из данных, см. evidence группы.",
+      "Строка 2 задаёт План, Факт, сравнение или дату начала. Строка 3 даёт дату конца либо пару недель для динамики. Строка 4 даёт дату месяца, номер недели, год базы или подпись недели.",
+      "Раскрывайте объединения только внутри их координат. Для заголовков сохраняйте и физическое значение, и привязку к верхней левой ячейке. Вертикальное объединение не создаёт дополнительной даты или разновидности показателя.",
+      "В columns.header_2_4 физические значения рядов 2–4 представлены как null, текст, целое число или ISO-дата. Excel serial преобразован в ISO только в полях даты. row_2_anchor указан, когда заголовок строки 2 физически расположен в другом столбце.",
+      "Семантический ключ столбца состоит из metric, role и period. Координата Excel остаётся обязательным идентификатором исходного столбца в рамках файла. Примеры различий: M/N/O — Факт по разным месяцам; L и O — ноябрьский план и факт; O и Y — факт ноября к дате отчёта и факт за неделю.",
+      "Динамика 46 / 45 в блоке EB:EK подписана в ячейке EJ3. Значения недели 45 в самом блоке отсутствуют. Сохраняйте готовую динамику и подпись без попытки вычислить её из соседних столбцов.",
+      "Разделители бывают между блоками, внутри блоков и на правом краю. Список полностью перечислен в excel-columns.json. Колонки с данными сохраняются независимо от hidden."
+    ],
+    "value_rules": [
+      "Показатели L:KZ в данных числовые. Числа OOXML с плавающей точкой несут хвосты представления. Для денег используйте decimal и округляйте на согласованном шаге вывода. ТО в L:AA хранится в тысячах рублей. Для вывода в рублях умножайте на 1000.",
+      "Пропуск, явный 0, отрицательное значение и форматированный ноль, видимый как тире, имеют разные представления источника. Читайте хранимое значение, null оставляйте null.",
+      "Процентные значения хранятся как доли. Например BY6=1.44 отображается как 144%. display отражает Excel-оформление заполненных ячеек. unit задаёт смысл показателя. mixed означает наличие обычного и процентного оформления в одном столбце. Сохраняйте число с исходным масштабом.",
+      "Формулы и ошибки ячеек в образце отсутствуют. Формулы условного форматирования игнорируйте при извлечении значений. Для будущих файлов при наличии формулы сохраняйте кэшированное значение и диагностику. Если кэша нет, фиксируйте пропуск и причину."
+    ]
+  },
+  "parsing_workflow": [
+    "Выберите лист по имени и подтвердите метки E1/E2, основные группы строки 1 и сигнатуру сетевого итога. При чтении OOXML разрешайте имя листа через workbook.xml и workbook relationships. Путь к sheet1.xml зафиксирован только для образца.",
+    "Считайте метаданные книги и листа, shared strings, стили, объединения и строки 1–4. При потоковом чтении OOXML объединения хранятся после sheetData. Для полного динамического разбора используйте чтение метаданных отдельным проходом либо планируйте нормализацию после получения объединений.",
+    "Обходите строки потоково с выгрузкой только выбранных полей. Для прямого OOXML используйте адрес c@r, тип c@t, значение v, формулу f, стиль c@s, координату row@r. Пустые физические ячейки и отсутствующие узлы считайте пропусками.",
+    "Классифицируйте строки по row_contract. Валидируйте родителей и уникальность ключей внутри уровня. Верхний сетевой блок не наследует округ или магазин. Метаданные, разделители и строки итогов получают собственный класс.",
+    "Для быстрой выборки достаточно метаданных отчёта, B:E, номера строки и нужных столбцов показателей. По необходимости подключайте F:G и J:K. Не загружайте полную книгу в память и не отправляйте её строки в контекст агента.",
+    "При выборе показателя верните исходные координаты и период. Рекомендуемая запись в длинном формате приведена в output_contract. Широкий формат на уровне отчётной строки тоже допустим.",
+    "Для изученного SHA-256 применяйте карту координат напрямую и проверяйте expected_profile. Для другого файла читайте даты, заголовки и объединения заново, сверяйте семантическое сопоставление и диагностируйте нераспознанные столбцы, дубли ключей, отсутствующих родителей и смену структуры. Если изменился бизнес-смысл, требуйте сверки с владельцем отчёта."
+  ],
+  "output_contract": {
+    "required_provenance": [
+      "workbook_id",
+      "sheet_name",
+      "source_row",
+      "source_column",
+      "row_kind"
+    ],
+    "dimension_fields": [
+      "district",
+      "curator_bucket",
+      "store_name",
+      "category"
+    ],
+    "measurement_fields": [
+      "metric",
+      "role",
+      "period",
+      "unit",
+      "value"
+    ],
+    "note": "В пределах одной книги исходная ячейка однозначна по workbook_id, sheet_name, source_row и source_column. Для идентификации снимка допустим workbook_id=sha256. Для логического ключа добавляйте дату отчёта и поля соответствующего row_kind. Сетевой повтор исключайте из основного набора."
+  },
+  "expected_profile": {
+    "present_rows": 12330,
+    "report_rows_including_repeat": 12324,
+    "metric_columns": 267,
+    "untitled_metric_groups": 1,
+    "metric_groups": 24,
+    "spacer_columns_in_L_KZ": 34,
+    "store_names": 504,
+    "district_buckets": 9,
+    "curator_keys": 48,
+    "distinct_curator_labels_excluding_network": 44,
+    "categories_per_store_histogram": {
+      "20": 1,
+      "22": 37,
+      "23": 280,
+      "24": 186
+    },
+    "network_categories": 23,
+    "store_categories": 24,
+    "store_only_category": "Номенклатура партнёр",
+    "store_only_category_occurrences": 196,
+    "store_lfl_histogram": {
+      "0": 49,
+      "1": 455
+    },
+    "store_totals_without_area": 12,
+    "store_totals_without_format": 2,
+    "cell_formulas": 0,
+    "cell_errors": 0,
+    "district_total_rows": [
+      33,
+      156,
+      1356,
+      2172,
+      3163,
+      5800,
+      7128,
+      7417,
+      7440
+    ],
+    "non_report_rows": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      7,
+      31
+    ],
+    "hidden_columns": 212,
+    "hidden_store_category_rows": 11738
+  },
+  "acceptance_examples": [
+    {
+      "goal": "Получить ТО магазина за 47-ю неделю по итоговой строке магазина.",
+      "resolve": {
+        "district": "Дальневосточный",
+        "curator_bucket": "Приморский",
+        "store_name": "ВЛД Бородинская 14",
+        "metric": "turnover",
+        "role": "week_actual",
+        "week": 47
+      },
+      "expect": {
+        "row_kind": "store_total",
+        "cell": "Y35",
+        "amount_thousand_rub": "1988.79",
+        "amount_rub": "1988790",
+        "start": "2026-11-16",
+        "end": "2026-11-22"
+      }
+    },
+    {
+      "goal": "Получить ТО категории АВТО того же магазина за неделю и сверить уровень строки.",
+      "expect": {
+        "row_kind": "store_category",
+        "cell": "Y36",
+        "category": "АВТО",
+        "amount_thousand_rub": "31.83",
+        "hidden": true,
+        "parent_row": 35
+      }
+    },
+    {
+      "goal": "Сверить текущий месяц с текущей неделей по сети. Итог должен быть единственным.",
+      "expect": {
+        "row_kind": "network_total",
+        "month_cell": "O32",
+        "month_thousand_rub": "1830998.87",
+        "week_cell": "Y32",
+        "week_thousand_rub": "581615.10",
+        "excluded_repeat_cell": "Y6"
+      }
+    },
+    {
+      "goal": "Проверить числовой ноль, пропуск формата и пропуск площади в одной строке магазина.",
+      "expect": {
+        "row_kind": "store_total",
+        "row": 7419,
+        "F": 0,
+        "G": null,
+        "J": null,
+        "K": null,
+        "L": "0",
+        "Y": "159.63"
+      }
+    },
+    {
+      "goal": "Проверить состав сетевого итога на примере ТО недели 47.",
+      "expect": {
+        "sum_of_all_district_total_Y_rounded": "804449.00",
+        "sum_of_network_category_Y_rounded": "581615.11",
+        "reported_network_total_Y": "581615.10",
+        "unit": "thousand_rub"
+      }
+    }
+  ]
+}
